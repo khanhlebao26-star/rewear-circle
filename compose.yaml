@@ -1,0 +1,22 @@
+name: rewear-circle-src
+
+services:
+  mongo:
+    image: mongo:8
+    ports:
+      - "27017:27017"
+    volumes:
+      - rewear-mongo-data:/data/db
+    restart: unless-stopped
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+    restart: unless-stopped
+
+volumes:
+  rewear-mongo-data:
+    external: true
+    name: rewear-mongo-data

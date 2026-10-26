@@ -1,0 +1,177 @@
+const router = require("express").Router();
+const mongoose = require("mongoose");
+const multer = require("multer");
+const path = require("node:path");
+const fs = require("node:fs/promises");
+const { randomUUID } = require("node:crypto");
+const Media = require("../models/Media");
+const Listing = require("../models/Listing");
+const User = require("../models/User");
+const {
+  requireAuth,
+  requireVerifiedEmail,
+} = require("../middleware/requireAuth");
+
+const uploadDir = path.resolve(__dirname, "../../uploads");
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { files: 5, fileSize: 5 * 1024 * 1024 },
+});
+
+function fail(req, res, status, code, message) {
+  return res.status(status).json({
+    error: { code, message, retryable: false },
+    meta: { requestId: req.requestId },
+  });
+}
+
+function detectImage(buffer) {
+  if (buffer.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))) {
+    return { mimeType: "image/jpeg", extension: ".jpg" };
+  }
+  if (
+    buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+  ) {
+    return { mimeType: "image/png", extension: ".png" };
+  }
+  if (
+    buffer.toString("ascii", 0, 4) === "RIFF" &&
+    buffer.toString("ascii", 8, 12) === "WEBP"
+  ) {
+    return { mimeType: "image/webp", extension: ".webp" };
+  }
+  return null;
+}
+
+router.post(
+  "/media/upload-requests",
+  requireAuth,
+  requireVerifiedEmail,
+  (req, res, next) => {
+    upload.array("images", 5)(req, res, (error) => {
+      if (!error) return next();
+      return fail(
+        req,
+        res,
+        error.code === "LIMIT_FILE_SIZE" ? 413 : 400,
+        "INVALID_IMAGE",
+        "Ảnh không hợp lệ hoặc vượt giới hạn.",
+      );
+    });
+  },
+  async (req, res, next) => {
+    const writtenFiles = [];
+    const createdIds = [];
+
+    try {
+      if (!req.files?.length) {
+        return fail(req, res, 422, "VALIDATION_ERROR", "Cần ít nhất một ảnh.");
+      }
+
+      const checked = req.files.map((file) => ({
+        file,
+        detected: detectImage(file.buffer),
+      }));
+
+      if (
+        checked.some(
+          ({ file, detected }) =>
+            !detected || file.mimetype !== detected.mimeType,
+        )
+      ) {
+        return fail(
+          req,
+          res,
+          422,
+          "INVALID_IMAGE",
+          "Chỉ nhận JPEG, PNG hoặc WebP hợp lệ.",
+        );
+      }
+
+      await fs.mkdir(uploadDir, { recursive: true });
+      const data = [];
+
+      for (const { file, detected } of checked) {
+        const filename = `${randomUUID()}${detected.extension}`;
+        await fs.writeFile(path.join(uploadDir, filename), file.buffer);
+        writtenFiles.push(filename);
+
+        const media = await Media.create({
+          ownerId: req.user._id,
+          filename,
+          mimeType: detected.mimeType,
+          size: file.size,
+        });
+        createdIds.push(media._id);
+
+        data.push({
+          mediaId: String(media._id),
+          url: `/api/v1/media/${media._id}`,
+        });
+      }
+
+      return res.status(201).json({
+        data,
+        meta: { requestId: req.requestId },
+      });
+    } catch (error) {
+      await Promise.all(
+        writtenFiles.map((filename) =>
+          fs
+            .rm(path.join(uploadDir, filename), { force: true })
+            .catch(() => {}),
+        ),
+      );
+      if (createdIds.length) {
+        await Media.deleteMany({ _id: { $in: createdIds } }).catch(() => {});
+      }
+      next(error);
+    }
+  },
+);
+
+router.get("/media/:id", async (req, res, next) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return fail(req, res, 404, "NOT_FOUND", "Không tìm thấy ảnh.");
+    }
+
+    const media = await Media.findById(req.params.id);
+    if (!media) return fail(req, res, 404, "NOT_FOUND", "Không tìm thấy ảnh.");
+
+    const user = req.session.userId
+      ? await User.findById(req.session.userId)
+      : null;
+    let allowed =
+      user &&
+      (String(media.ownerId) === String(user._id) || user.role === "ADMIN");
+
+    if (!allowed) {
+      const listings = await Listing.find({
+        approvedVersionId: { $ne: null },
+        reviewHold: false,
+        sellerHidden: false,
+        adminHidden: false,
+        "versions.imageIds": media._id,
+      });
+
+      allowed = listings.some((listing) => {
+        const version = listing.versions.id(listing.approvedVersionId);
+        return (
+          version?.status === "APPROVED" &&
+          version.imageIds.some((id) => String(id) === String(media._id))
+        );
+      });
+    }
+
+    if (!allowed)
+      return fail(req, res, 404, "NOT_FOUND", "Không tìm thấy ảnh.");
+
+    res.type(media.mimeType);
+    return res.sendFile(path.join(uploadDir, media.filename));
+  } catch (error) {
+    next(error);
+  }
+});
+
+module.exports = router;
