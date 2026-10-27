@@ -191,6 +191,20 @@ router.post(
       if (!listing)
         return fail(req, res, 404, "NOT_FOUND", "Không tìm thấy tin.");
 
+      if (
+        listing.saleStatus === "RESERVED" &&
+        listing.reservedUntil &&
+        listing.reservedUntil > new Date()
+      ) {
+        return fail(
+          req,
+          res,
+          409,
+          "LISTING_RESERVED",
+          "Món đang được giữ để checkout; chưa thể sửa.",
+        );
+      }
+
       if (listing.saleStatus === "SOLD") {
         return fail(req, res, 409, "LISTING_SOLD", "Không thể sửa tin đã bán.");
       }

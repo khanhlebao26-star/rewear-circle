@@ -34,10 +34,21 @@ const listingSchema = new mongoose.Schema(
       enum: ["AVAILABLE", "RESERVED", "SOLD"],
       default: "AVAILABLE",
     },
+    reservedCheckoutId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Checkout",
+      default: null,
+    },
+    reservedUntil: {
+      type: Date,
+      default: null,
+    },
     sellerHidden: { type: Boolean, default: false },
     adminHidden: { type: Boolean, default: false },
   },
   { timestamps: true, optimisticConcurrency: true },
 );
+
+listingSchema.index({ saleStatus: 1, reservedUntil: 1 });
 
 module.exports = mongoose.model("Listing", listingSchema);

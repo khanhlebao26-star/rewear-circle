@@ -67,6 +67,7 @@ app.get("/health/ready", (req, res) => {
 app.use("/api/v1", require("./routes/auth"));
 app.use("/api/v1", require("./routes/media"));
 app.use("/api/v1", require("./routes/listings"));
+app.use("/api/v1", require("./routes/commerce"));
 
 app.use((req, res) => {
   res.status(404).json({
