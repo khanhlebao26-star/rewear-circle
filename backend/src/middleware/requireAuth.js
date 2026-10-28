@@ -22,4 +22,27 @@ function requireVerifiedEmail(req, res, next) {
   next();
 }
 
-module.exports = { requireAuth, requireVerifiedEmail };
+function requireRole(...roles) {
+  return (req, res, next) => {
+    if (!req.user) {
+      return failure(req, res, 401, "UNAUTHORIZED", "Vui lòng đăng nhập.");
+    }
+
+    if (!roles.includes(req.user.role)) {
+      return failure(req, res, 403, "FORBIDDEN", "Bạn không có quyền thực hiện thao tác này.");
+    }
+
+    next();
+  };
+}
+
+const requireAdmin = requireRole("ADMIN");
+const requireSupport = requireRole("SUPPORT");
+
+module.exports = {
+  requireAuth,
+  requireVerifiedEmail,
+  requireRole,
+  requireAdmin,
+  requireSupport,
+};

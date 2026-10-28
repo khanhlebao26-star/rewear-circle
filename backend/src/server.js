@@ -7,17 +7,41 @@ async function main() {
     }
   }
 
+  require("./config/vnpay")();
+
   await mongoose.connect(process.env.MONGODB_URI);
 
   const app = require("./app");
   const Listing = require("./models/Listing");
-  const { Cart, Checkout, Order } = require("./models/commerce");
+  const Media = require("./models/Media");
+  const Report = require("./models/Report");
+  const Case = require("./models/Case");
+  const AuditEvent = require("./models/AuditEvent");
+  const Notification = require("./models/Notification");
+  const {
+    Cart,
+    Checkout,
+    Order,
+    PaymentAttempt,
+    PaymentEvent,
+    CodCollection,
+    CodReturnRequest,
+  } = require("./models/commerce");
 
   await Promise.all([
     Listing.init(),
+    Media.init(),
+    Report.init(),
+    Case.init(),
+    AuditEvent.init(),
+    Notification.init(),
     Cart.init(),
     Checkout.init(),
     Order.init(),
+    PaymentAttempt.init(),
+    PaymentEvent.init(),
+    CodCollection.init(),
+    CodReturnRequest.init(),
   ]);
 
   const port = Number(process.env.PORT || 4000);

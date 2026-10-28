@@ -69,7 +69,7 @@ Người bán có thể ẩn tin đăng của họ. Tin đăng bị ẩn sẽ kh
 
 **Phân loại:**Đã chốt
 
-Mỗi tin đăng bán tương ứng một món, số lượng 1. Thêm vào giỏ không giữ món. Khi Buyer xác nhận mua, hệ thống kiểm tra lại giá và khả năng bán, tạo Checkout/đơn theo Seller và giữ món ban đầu 15 phút. Hết hạn phải đối chiếu cổng; kết quả chưa rõ tiếp tục chặn bán và tra cứu lại sau 1, 3, 5 phút. Chỉ giải phóng khi đã xác minh chưa thanh toán và không còn xung đột. Việc giải phóng không tự gỡ lý do Seller/Admin ẩn hoặc chờ duyệt bản sửa; món chỉ được mua khi mọi điều kiện bán đều hợp lệ.
+Mỗi tin đăng bán tương ứng một món, số lượng 1. Thêm vào giỏ không giữ món. Khi Buyer xác nhận mua VNPAY, hệ thống kiểm tra lại giá và khả năng bán, tạo Checkout/đơn theo Seller và giữ món ban đầu 15 phút. Hết hạn kích hoạt đối chiếu; các checkpoint nội bộ là lúc hết hạn và sau 1, 3, 5 phút. Do giới hạn QueryDr của cổng (mã 94 cho request trùng trong 5 phút), lần +1/+3 kiểm tra IPN đến mới; không gọi QueryDr quá sớm. Kết quả chưa rõ tiếp tục chặn bán. Chỉ giải phóng khi đã xác minh chưa thanh toán và không còn xung đột. Việc giải phóng không tự gỡ lý do Seller/Admin ẩn hoặc chờ duyệt bản sửa; món chỉ được mua khi mọi điều kiện bán đều hợp lệ. COD theo BR-ORDER-006/BR-PAYMENT-011.
 
 ### **BR-LISTING-006 — Độ chính xác của thông tin đăng tải**
 
@@ -88,6 +88,8 @@ Khi Seller gửi form sửa gồm đầy đủ thông tin sản phẩm, phiên b
 Đơn đã tạo và món đã được giữ trước khi Seller gửi form sửa vẫn dùng giá, thông tin món đã lưu lúc đặt; việc gửi form sửa không làm gián đoạn thanh toán của đơn đó.
 
 ## **4. Quy tắc đặt hàng**
+
+**Bổ sung 28/10/2026 — Hai phương thức:** Checkout bắt buộc paymentMethod=VNPAY|COD; một phương thức cho toàn Checkout, không đổi sau tạo. Các quy tắc 15 phút, một payment attempt, xác minh cổng trước SOLD, QueryDr, hủy trước attempt và PAID trước giao trong tài liệu này áp dụng nhánh VNPAY. COD theo BR-ORDER-006/BR-PAYMENT-011 cuối tài liệu và [hợp đồng A-09](../report/backend-orders-vnpay-sandbox-master-report.md).
 
 ### **BR-ORDER-001 — Mã số đơn hàng**
 
@@ -252,3 +254,17 @@ BR-TRUST-004 — Khiếu nại giao nhận: Buyer của Order PAID có thể m�
 BR-PAYMENT-010 — Trạng thái xác minh: Payment FAILED dẫn Checkout PAYMENT_FAILED và mọi Order PENDING của Checkout sang PAYMENT_FAILED; Payment EXPIRED hoặc hết giữ chỗ đã đối chiếu là chưa trả dẫn Checkout EXPIRED và Order EXPIRED. Chỉ giải phóng món khi không còn giao dịch chưa rõ. Kết quả mâu thuẫn/đến muộn theo BR-PAYMENT-009.
 
 BR-LISTING-008 — Giới hạn form MVP: danh mục Áo, Quần, Giày, Phụ kiện; size Áo/Quần XS–XXL, Giày EU 35–45, Phụ kiện FREE_SIZE. Giá 20.000–5.000.000 VND; tên 5–100 ký tự; mô tả 20–2.000 ký tự; mô tả lỗi tối đa 1.000 ký tự; 1–5 ảnh JPEG/PNG/WebP tối đa 5 MB/ảnh. Bằng chứng vụ việc tùy chọn 0–5 ảnh cùng định dạng và giới hạn. Frontend, API và kiểm thử dùng cùng cấu hình.
+
+## Bổ sung 28/10/2026 — COD trong MVP
+
+### BR-ORDER-006 — Đặt, hủy và hoàn đơn COD
+
+COD chốt Checkout/Order CONFIRMED, paymentStatus UNPAID và Listing SOLD ngay trong transaction đặt hàng. SOLD nghĩa là đã chốt quyền mua, không chứng minh đã thu tiền. Không giữ tạm 15 phút hoặc gọi QueryDr. Buyer được hủy từng Order COD trước shippedAt khi chưa thu tiền/không có hold; giao, hủy và thu kiểm tra đồng thời. Hủy chỉ trả món về AVAILABLE khi đúng chủ đơn và không còn xung đột; các cờ ẩn/duyệt vẫn giữ.
+
+Đơn đã gửi không tự hủy/mở bán. Seller yêu cầu xác nhận hàng đã hoàn đủ về, chưa thu; Admin quyết định có lý do/audit sau kiểm tra hồ sơ. Chấp nhận chuyển RETURNED/NOT_DUE và giải phóng đúng quyền nhận; dữ liệu mâu thuẫn giữ NEEDS_REVIEW. Không tự hoàn tiền. Hợp đồng API/điều kiện chi tiết ở A-09 báo cáo tổng đơn hàng.
+
+### BR-PAYMENT-011 — Thu tiền COD và giao nhận
+
+Một Checkout có thể có nhiều Order COD; Buyer trả từng Seller theo Order.total, không có attempt tổng. Seller của đơn khai báo đã thu đủ tiền sau khi đã gửi; ghi source=SELLER_DECLARATION, amount, thời điểm server và audit, không coi là xác minh của cổng/hãng vận chuyển. Mỗi Order có tối đa một collection hiệu lực; replay không thu hai lần.
+
+Order COD CONFIRMED không hold được giao và Seller được đọc địa chỉ trước khi thu. Buyer xác nhận nhận sau khi gửi chuyển COMPLETED, không tự COLLECTED; Seller ghi nhận thu không tự COMPLETED. Tranh chấp thu/giao giữ NEEDS_REVIEW. DELIVERY áp dụng cả COD CONFIRMED chưa nhận; ITEM vẫn sau COMPLETED. Toàn bộ demo dùng dữ liệu/tiền giả.

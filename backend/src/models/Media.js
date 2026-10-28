@@ -11,6 +11,7 @@ const mediaSchema = new mongoose.Schema(
     filename: { type: String, required: true },
     mimeType: { type: String, required: true },
     size: { type: Number, required: true },
+    purpose: { type: String, enum: ["LISTING", "CASE_EVIDENCE"], default: "LISTING" },
   },
   { timestamps: true },
 );
