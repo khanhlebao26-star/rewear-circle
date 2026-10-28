@@ -2,7 +2,8 @@ name: rewear-circle-src
 
 services:
   mongo:
-    image: mongo:8
+    image: mongo:8.2.7
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
     ports:
       - "27017:27017"
     volumes:

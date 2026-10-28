@@ -1,0 +1,119 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="app.diagrams.net" agent="Codex">
+  <diagram id="WF-03_Gio-hang-thanh-toan-ban-giao" name="Workflow">
+    <mxGraphModel grid="1" page="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" pageScale="1" pageWidth="1600" pageHeight="1930" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;fontFamily=Arial;fontSize=27;fontColor=#0F172A;fontStyle=1;align=left;verticalAlign=middle;" value="WF-03 · Giỏ hàng, thanh toán và bàn giao" vertex="1">
+          <mxGeometry height="50" width="1500" x="50" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;fontFamily=Arial;fontSize=14;fontColor=#0F172A;fontStyle=0;align=left;verticalAlign=middle;" value="Nhiều món trong giỏ → thanh toán một lần → tách đơn theo từng người bán" vertex="1">
+          <mxGeometry height="40" width="1500" x="50" y="70" as="geometry" />
+        </mxCell>
+        <mxCell id="a" parent="1" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#16A34A;strokeWidth=2;fontFamily=Arial;fontSize=14;fontColor=#0F172A;align=center;verticalAlign=middle;spacing=10;" value="Người mua chọn các món trong giỏ&lt;br&gt;Mỗi món chỉ có 1 chiếc" vertex="1">
+          <mxGeometry height="65" width="300" x="610" y="145" as="geometry" />
+        </mxCell>
+        <mxCell id="b" parent="1" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#2563EB;strokeWidth=2;fontFamily=Arial;fontSize=14;fontColor=#0F172A;align=center;verticalAlign=middle;spacing=10;" value="Hệ thống kiểm tra đăng nhập, giá,&lt;br&gt;món còn bán, không mua món&lt;br&gt;do chính mình đăng" vertex="1">
+          <mxGeometry height="85" width="300" x="610" y="250" as="geometry" />
+        </mxCell>
+        <mxCell id="c" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#D97706;strokeWidth=2;fontFamily=Arial;fontSize=14;fontColor=#0F172A;align=center;verticalAlign=middle;spacing=10;" value="Tất cả món đều hợp lệ?" vertex="1">
+          <mxGeometry height="105" width="270" x="625" y="375" as="geometry" />
+        </mxCell>
+        <mxCell id="d" parent="1" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#DC2626;strokeWidth=2;fontFamily=Arial;fontSize=14;fontColor=#0F172A;align=center;verticalAlign=middle;spacing=10;" value="Giá đổi, món hết bán hoặc đang&lt;br&gt;chờ duyệt bản sửa; xem lại giỏ" vertex="1">
+          <mxGeometry height="80" width="320" x="1050" y="390" as="geometry" />
+        </mxCell>
+        <mxCell id="e" parent="1" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#2563EB;strokeWidth=2;fontFamily=Arial;fontSize=14;fontColor=#0F172A;align=center;verticalAlign=middle;spacing=10;" value="Buyer nhập thông tin nhận hàng, xác nhận món và tổng tiền" vertex="1">
+          <mxGeometry height="65" width="300" x="610" y="525" as="geometry" />
+        </mxCell>
+        <mxCell id="f" parent="1" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#2563EB;strokeWidth=2;fontFamily=Arial;fontSize=14;fontColor=#0F172A;align=center;verticalAlign=middle;spacing=10;" value="Kiểm tra lại và tạo lượt mua chung&lt;br&gt;Giữ từng món trong 15 phút&lt;br&gt;Tách đơn, lưu giá và thông tin lúc đặt" vertex="1">
+          <mxGeometry height="90" width="300" x="610" y="630" as="geometry" />
+        </mxCell>
+        <mxCell id="g" parent="1" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#2563EB;strokeWidth=2;fontFamily=Arial;fontSize=14;fontColor=#0F172A;align=center;verticalAlign=middle;spacing=10;" value="Gửi yêu cầu thanh toán tổng tiền&lt;br&gt;đến cổng thanh toán thử nghiệm" vertex="1">
+          <mxGeometry height="90" width="300" x="610" y="770" as="geometry" />
+        </mxCell>
+        <mxCell id="h" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#D97706;strokeWidth=2;fontFamily=Arial;fontSize=14;fontColor=#0F172A;align=center;verticalAlign=middle;spacing=10;" value="Đã xác minh kết quả thanh toán&lt;br&gt;và thông tin khớp?" vertex="1">
+          <mxGeometry height="115" width="270" x="625" y="910" as="geometry" />
+        </mxCell>
+        <mxCell id="i" parent="1" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#DC2626;strokeWidth=2;fontFamily=Arial;fontSize=14;fontColor=#0F172A;align=center;verticalAlign=middle;spacing=10;" value="Chưa rõ: tra cứu lại sau 1, 3, 5 phút&lt;br&gt;Vẫn chưa rõ: NEEDS_REVIEW, chặn bán món" vertex="1">
+          <mxGeometry height="90" width="320" x="1050" y="925" as="geometry" />
+        </mxCell>
+        <mxCell id="j" parent="1" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#2563EB;strokeWidth=2;fontFamily=Arial;fontSize=14;fontColor=#0F172A;align=center;verticalAlign=middle;spacing=10;" value="Ghi nhận kết quả đúng một lần&lt;br&gt;dù nhận thông báo trùng" vertex="1">
+          <mxGeometry height="90" width="300" x="610" y="1070" as="geometry" />
+        </mxCell>
+        <mxCell id="k" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#D97706;strokeWidth=2;fontFamily=Arial;fontSize=14;fontColor=#0F172A;align=center;verticalAlign=middle;spacing=10;" value="Thanh toán thành công?" vertex="1">
+          <mxGeometry height="105" width="270" x="625" y="1210" as="geometry" />
+        </mxCell>
+        <mxCell id="l" parent="1" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#DC2626;strokeWidth=2;fontFamily=Arial;fontSize=14;fontColor=#0F172A;align=center;verticalAlign=middle;spacing=10;" value="Hết 15 phút: tra cứu cổng&lt;br&gt;Chỉ mở bán khi xác minh chưa trả" vertex="1">
+          <mxGeometry height="85" width="320" x="1050" y="1220" as="geometry" />
+        </mxCell>
+        <mxCell id="m" parent="1" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#16A34A;strokeWidth=2;fontFamily=Arial;fontSize=14;fontColor=#0F172A;align=center;verticalAlign=middle;spacing=10;" value="Đánh dấu các đơn là đã thanh toán; món chuyển Đã bán" vertex="1">
+          <mxGeometry height="75" width="300" x="610" y="1360" as="geometry" />
+        </mxCell>
+        <mxCell id="n" parent="1" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#2563EB;strokeWidth=2;fontFamily=Arial;fontSize=14;fontColor=#0F172A;align=center;verticalAlign=middle;spacing=10;" value="Người mua xem tất cả đơn&lt;br&gt;Mỗi người bán chỉ xem đơn của mình" vertex="1">
+          <mxGeometry height="80" width="300" x="610" y="1480" as="geometry" />
+        </mxCell>
+        <mxCell id="o" parent="1" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#2563EB;strokeWidth=2;fontFamily=Arial;fontSize=14;fontColor=#0F172A;align=center;verticalAlign=middle;spacing=10;" value="Seller tự đặt vận chuyển, nhập hãng/mã vận đơn&lt;br&gt;Buyer bấm Đã nhận trên đơn" vertex="1">
+          <mxGeometry height="85" width="300" x="610" y="1605" as="geometry" />
+        </mxCell>
+        <mxCell id="p" parent="1" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#16A34A;strokeWidth=2;fontFamily=Arial;fontSize=14;fontColor=#0F172A;align=center;verticalAlign=middle;spacing=10;" value="Đơn COMPLETED sau Buyer xác nhận Đã nhận" vertex="1">
+          <mxGeometry height="70" width="300" x="610" y="1735" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="a" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Arial;fontSize=13;fontColor=#334155;labelBackgroundColor=#FFFFFF;" target="b" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="b" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Arial;fontSize=13;fontColor=#334155;labelBackgroundColor=#FFFFFF;" target="c" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="c" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Arial;fontSize=13;fontColor=#334155;labelBackgroundColor=#FFFFFF;" target="d" value="Không">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" edge="1" parent="1" source="d" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#DC2626;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Arial;fontSize=13;fontColor=#334155;labelBackgroundColor=#FFFFFF;dashed=1;dashPattern=6 4;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="b" value="Kiểm tra lại">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" edge="1" parent="1" source="c" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Arial;fontSize=13;fontColor=#334155;labelBackgroundColor=#FFFFFF;" target="e" value="Có">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" edge="1" parent="1" source="e" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Arial;fontSize=13;fontColor=#334155;labelBackgroundColor=#FFFFFF;" target="f" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" edge="1" parent="1" source="f" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Arial;fontSize=13;fontColor=#334155;labelBackgroundColor=#FFFFFF;" target="g" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" edge="1" parent="1" source="g" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Arial;fontSize=13;fontColor=#334155;labelBackgroundColor=#FFFFFF;" target="h" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" edge="1" parent="1" source="h" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Arial;fontSize=13;fontColor=#334155;labelBackgroundColor=#FFFFFF;" target="i" value="Chưa rõ / không khớp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" edge="1" parent="1" source="h" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Arial;fontSize=13;fontColor=#334155;labelBackgroundColor=#FFFFFF;" target="j" value="Đã xác minh">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" edge="1" parent="1" source="j" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Arial;fontSize=13;fontColor=#334155;labelBackgroundColor=#FFFFFF;" target="k" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" edge="1" parent="1" source="k" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Arial;fontSize=13;fontColor=#334155;labelBackgroundColor=#FFFFFF;" target="l" value="Không">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e13" edge="1" parent="1" source="k" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Arial;fontSize=13;fontColor=#334155;labelBackgroundColor=#FFFFFF;" target="m" value="Có">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e14" edge="1" parent="1" source="m" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Arial;fontSize=13;fontColor=#334155;labelBackgroundColor=#FFFFFF;" target="n" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e15" edge="1" parent="1" source="n" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Arial;fontSize=13;fontColor=#334155;labelBackgroundColor=#FFFFFF;" target="o" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e16" edge="1" parent="1" source="o" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Arial;fontSize=13;fontColor=#334155;labelBackgroundColor=#FFFFFF;" target="p" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="note1" parent="1" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#94A3B8;strokeWidth=2;fontFamily=Arial;fontSize=14;fontColor=#0F172A;align=center;verticalAlign=middle;spacing=10;" value="Seller chịu phí vận chuyển trong giá niêm yết; mỗi Seller giao riêng. Người mua trả đúng tổng tiền của Checkout, bằng tổng các đơn theo từng người bán. Giá và thông tin được lưu lúc đặt; Seller gửi form sửa sau khi đơn đã giữ chỗ không đổi đơn hay gián đoạn thanh toán. Chỉ ghi đã thanh toán sau khi đối chiếu cổng thanh toán." vertex="1">
+          <mxGeometry height="135" width="430" x="35" y="1035" as="geometry" />
+        </mxCell>
+        <mxCell id="note2" parent="1" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#94A3B8;strokeWidth=2;fontFamily=Arial;fontSize=14;fontColor=#0F172A;align=center;verticalAlign=middle;spacing=10;" value="Giỏ không giữ món. Checkout giữ 15 phút; hết hạn dùng VNPAY QueryDr. Chưa rõ: tra lại sau 1/3/5 phút rồi NEEDS_REVIEW, khóa bán/giao. FAILED hoặc EXPIRED đã xác minh: Checkout và Order cùng trạng thái; chỉ giải phóng món khi an toàn. Thành công muộn/xung đột: PAY ghi SUCCESS, đơn NEEDS_REVIEW, không giao trùng. Buyer chỉ tự hủy trước payment attempt; không retry. DELIVERY case khi PAID chưa giao." vertex="1">
+          <mxGeometry height="165" width="460" x="1050" y="1605" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
