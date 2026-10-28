@@ -7,41 +7,19 @@ const { randomUUID } = require("node:crypto");
 const Media = require("../models/Media");
 const Listing = require("../models/Listing");
 const User = require("../models/User");
+const { approvedVersion, approvedVisibleListingQuery } = require("../domain/commerceRules");
+const { detectImage } = require("../domain/mediaRules");
 const {
   requireAuth,
   requireVerifiedEmail,
 } = require("../middleware/requireAuth");
+const { success, failure: fail } = require("../http/responses");
 
 const uploadDir = path.resolve(__dirname, "../../uploads");
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { files: 5, fileSize: 5 * 1024 * 1024 },
 });
-
-function fail(req, res, status, code, message) {
-  return res.status(status).json({
-    error: { code, message, retryable: false },
-    meta: { requestId: req.requestId },
-  });
-}
-
-function detectImage(buffer) {
-  if (buffer.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))) {
-    return { mimeType: "image/jpeg", extension: ".jpg" };
-  }
-  if (
-    buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
-  ) {
-    return { mimeType: "image/png", extension: ".png" };
-  }
-  if (
-    buffer.toString("ascii", 0, 4) === "RIFF" &&
-    buffer.toString("ascii", 8, 12) === "WEBP"
-  ) {
-    return { mimeType: "image/webp", extension: ".webp" };
-  }
-  return null;
-}
 
 router.post(
   "/media/upload-requests",
@@ -110,10 +88,7 @@ router.post(
         });
       }
 
-      return res.status(201).json({
-        data,
-        meta: { requestId: req.requestId },
-      });
+      return success(req, res, data, 201);
     } catch (error) {
       await Promise.all(
         writtenFiles.map((filename) =>
@@ -125,53 +100,42 @@ router.post(
       if (createdIds.length) {
         await Media.deleteMany({ _id: { $in: createdIds } }).catch(() => {});
       }
-      next(error);
+      throw error;
     }
   },
 );
 
-router.get("/media/:id", async (req, res, next) => {
-  try {
-    if (!mongoose.isValidObjectId(req.params.id)) {
-      return fail(req, res, 404, "NOT_FOUND", "Không tìm thấy ảnh.");
-    }
-
-    const media = await Media.findById(req.params.id);
-    if (!media) return fail(req, res, 404, "NOT_FOUND", "Không tìm thấy ảnh.");
-
-    const user = req.session.userId
-      ? await User.findById(req.session.userId)
-      : null;
-    let allowed =
-      user &&
-      (String(media.ownerId) === String(user._id) || user.role === "ADMIN");
-
-    if (!allowed) {
-      const listings = await Listing.find({
-        approvedVersionId: { $ne: null },
-        reviewHold: false,
-        sellerHidden: false,
-        adminHidden: false,
-        "versions.imageIds": media._id,
-      });
-
-      allowed = listings.some((listing) => {
-        const version = listing.versions.id(listing.approvedVersionId);
-        return (
-          version?.status === "APPROVED" &&
-          version.imageIds.some((id) => String(id) === String(media._id))
-        );
-      });
-    }
-
-    if (!allowed)
-      return fail(req, res, 404, "NOT_FOUND", "Không tìm thấy ảnh.");
-
-    res.type(media.mimeType);
-    return res.sendFile(path.join(uploadDir, media.filename));
-  } catch (error) {
-    next(error);
+router.get("/media/:id", async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) {
+    return fail(req, res, 404, "NOT_FOUND", "Không tìm thấy ảnh.");
   }
+
+  const media = await Media.findById(req.params.id);
+  if (!media) return fail(req, res, 404, "NOT_FOUND", "Không tìm thấy ảnh.");
+
+  const user = req.session.userId
+    ? await User.findById(req.session.userId)
+    : null;
+  let allowed =
+    user &&
+    (String(media.ownerId) === String(user._id) || user.role === "ADMIN");
+
+  if (!allowed) {
+    const listings = await Listing.find(
+      approvedVisibleListingQuery({ "versions.imageIds": media._id }),
+    );
+
+    allowed = listings.some((listing) => {
+      const version = approvedVersion(listing);
+      return version?.imageIds.some((id) => String(id) === String(media._id));
+    });
+  }
+
+  if (!allowed)
+    return fail(req, res, 404, "NOT_FOUND", "Không tìm thấy ảnh.");
+
+  res.type(media.mimeType);
+  return res.sendFile(path.join(uploadDir, media.filename));
 });
 
 module.exports = router;

@@ -5,6 +5,7 @@ const { rateLimit } = require("express-rate-limit");
 const { randomInt, createHmac, timingSafeEqual } = require("node:crypto");
 const User = require("../models/User");
 const { requireAuth } = require("../middleware/requireAuth");
+const { success, failure: fail } = require("../http/responses");
 
 const mailer = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
@@ -14,17 +15,6 @@ const mailer = nodemailer.createTransport({
     ? { auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } }
     : {}),
 });
-
-function ok(req, res, status, data) {
-  return res.status(status).json({ data, meta: { requestId: req.requestId } });
-}
-
-function fail(req, res, status, code, message) {
-  return res.status(status).json({
-    error: { code, message, retryable: false },
-    meta: { requestId: req.requestId },
-  });
-}
 
 function safeUser(user) {
   return {
@@ -88,7 +78,7 @@ const authLimit = rateLimit({
     fail(req, res, 429, "RATE_LIMITED", "Bạn đã thử quá nhiều lần."),
 });
 
-router.post("/auth/register", authLimit, async (req, res, next) => {
+router.post("/auth/register", authLimit, async (req, res) => {
   try {
     const email = String(req.body?.email || "")
       .trim()
@@ -133,113 +123,102 @@ router.post("/auth/register", authLimit, async (req, res, next) => {
       );
     }
 
-    return ok(req, res, 201, {
-      user: safeUser(user),
-      message: "Đã tạo tài khoản. Hãy kiểm tra email.",
-    });
+    return success(
+      req,
+      res,
+      {
+        user: safeUser(user),
+        message: "Đã tạo tài khoản. Hãy kiểm tra email.",
+      },
+      201,
+    );
   } catch (error) {
     if (error.code === 11000) {
       return fail(req, res, 409, "EMAIL_EXISTS", "Email đã được sử dụng.");
     }
-    next(error);
+    throw error;
   }
 });
 
-router.post("/auth/login", authLimit, async (req, res, next) => {
-  try {
-    const email = String(req.body?.email || "")
-      .trim()
-      .toLowerCase();
-    const password = String(req.body?.password || "");
-    const user = await User.findOne({ email }).select("+passwordHash");
+router.post("/auth/login", authLimit, async (req, res) => {
+  const email = String(req.body?.email || "")
+    .trim()
+    .toLowerCase();
+  const password = String(req.body?.password || "");
+  const user = await User.findOne({ email }).select("+passwordHash");
 
-    if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
-      return fail(
-        req,
-        res,
-        401,
-        "INVALID_CREDENTIALS",
-        "Email hoặc mật khẩu không đúng.",
-      );
-    }
-
-    await new Promise((resolve, reject) => {
-      req.session.regenerate((error) => (error ? reject(error) : resolve()));
-    });
-
-    req.session.userId = String(user._id);
-
-    await new Promise((resolve, reject) => {
-      req.session.save((error) => (error ? reject(error) : resolve()));
-    });
-
-    return ok(req, res, 200, { user: safeUser(user) });
-  } catch (error) {
-    next(error);
+  if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+    return fail(
+      req,
+      res,
+      401,
+      "INVALID_CREDENTIALS",
+      "Email hoặc mật khẩu không đúng.",
+    );
   }
+
+  await new Promise((resolve, reject) => {
+    req.session.regenerate((error) => (error ? reject(error) : resolve()));
+  });
+
+  req.session.userId = String(user._id);
+
+  await new Promise((resolve, reject) => {
+    req.session.save((error) => (error ? reject(error) : resolve()));
+  });
+
+  return success(req, res, { user: safeUser(user) });
 });
 
-router.post("/auth/logout", requireAuth, async (req, res, next) => {
-  try {
-    await new Promise((resolve, reject) => {
-      req.session.destroy((error) => (error ? reject(error) : resolve()));
-    });
-    res.clearCookie("rewear.sid", { path: "/" });
-    return ok(req, res, 200, { message: "Đã đăng xuất." });
-  } catch (error) {
-    next(error);
-  }
+router.post("/auth/logout", requireAuth, async (req, res) => {
+  await new Promise((resolve, reject) => {
+    req.session.destroy((error) => (error ? reject(error) : resolve()));
+  });
+  res.clearCookie("rewear.sid", { path: "/" });
+  return success(req, res, { message: "Đã đăng xuất." });
 });
 
 router.get("/me", requireAuth, (req, res) => {
-  return ok(req, res, 200, safeUser(req.user));
+  return success(req, res, safeUser(req.user));
 });
 
-router.patch("/me", requireAuth, async (req, res, next) => {
-  try {
-    const keys = Object.keys(req.body || {});
-    if (keys.length !== 1 || keys[0] !== "displayName") {
-      return fail(
-        req,
-        res,
-        422,
-        "VALIDATION_ERROR",
-        "Chỉ được sửa tên hiển thị.",
-      );
-    }
-
-    const displayName = String(req.body.displayName || "").trim();
-    if (displayName.length < 2 || displayName.length > 100) {
-      return fail(
-        req,
-        res,
-        422,
-        "VALIDATION_ERROR",
-        "Tên hiển thị không hợp lệ.",
-      );
-    }
-
-    req.user.displayName = displayName;
-    await req.user.save();
-    return ok(req, res, 200, safeUser(req.user));
-  } catch (error) {
-    next(error);
+router.patch("/me", requireAuth, async (req, res) => {
+  const keys = Object.keys(req.body || {});
+  if (keys.length !== 1 || keys[0] !== "displayName") {
+    return fail(
+      req,
+      res,
+      422,
+      "VALIDATION_ERROR",
+      "Chỉ được sửa tên hiển thị.",
+    );
   }
+
+  const displayName = String(req.body.displayName || "").trim();
+  if (displayName.length < 2 || displayName.length > 100) {
+    return fail(
+      req,
+      res,
+      422,
+      "VALIDATION_ERROR",
+      "Tên hiển thị không hợp lệ.",
+    );
+  }
+
+  req.user.displayName = displayName;
+  await req.user.save();
+  return success(req, res, safeUser(req.user));
 });
 
 router.post(
   "/auth/resend-verification",
   authLimit,
   requireAuth,
-  async (req, res, next) => {
-    try {
-      await sendVerificationCode(req.user);
-      return ok(req, res, 200, {
-        message: "Nếu đủ điều kiện, mã mới sẽ được gửi đến email của bạn.",
-      });
-    } catch (error) {
-      next(error);
-    }
+  async (req, res) => {
+    await sendVerificationCode(req.user);
+    return success(req, res, {
+      message: "Nếu đủ điều kiện, mã mới sẽ được gửi đến email của bạn.",
+    });
   },
 );
 
@@ -247,65 +226,61 @@ router.post(
   "/auth/verify-email",
   authLimit,
   requireAuth,
-  async (req, res, next) => {
-    try {
-      const code = String(req.body?.code || "");
-      const user = req.user;
+  async (req, res) => {
+    const code = String(req.body?.code || "");
+    const user = req.user;
 
-      if (!/^\d{6}$/.test(code)) {
-        return fail(req, res, 422, "VALIDATION_ERROR", "Mã phải gồm 6 chữ số.");
-      }
-      if (user.emailVerifiedAt) {
-        return ok(req, res, 200, { user: safeUser(user) });
-      }
-      if (user.verificationAttempts >= 5) {
-        return fail(
-          req,
-          res,
-          429,
-          "VERIFICATION_ATTEMPTS_EXCEEDED",
-          "Mã đã hết lượt thử.",
-        );
-      }
-      if (
-        !user.verificationHash ||
-        !user.verificationExpiresAt ||
-        user.verificationExpiresAt <= new Date()
-      ) {
-        return fail(
-          req,
-          res,
-          400,
-          "VERIFICATION_CODE_EXPIRED",
-          "Mã đã hết hạn.",
-        );
-      }
-
-      const expected = Buffer.from(user.verificationHash, "hex");
-      const actual = Buffer.from(hashCode(user._id, code), "hex");
-
-      if (!timingSafeEqual(expected, actual)) {
-        user.verificationAttempts += 1;
-        await user.save();
-        return fail(
-          req,
-          res,
-          400,
-          "VERIFICATION_CODE_INVALID",
-          "Mã không đúng.",
-        );
-      }
-
-      user.emailVerifiedAt = new Date();
-      user.verificationHash = null;
-      user.verificationExpiresAt = null;
-      user.verificationAttempts = 0;
-      await user.save();
-
-      return ok(req, res, 200, { user: safeUser(user) });
-    } catch (error) {
-      next(error);
+    if (!/^\d{6}$/.test(code)) {
+      return fail(req, res, 422, "VALIDATION_ERROR", "Mã phải gồm 6 chữ số.");
     }
+    if (user.emailVerifiedAt) {
+      return success(req, res, { user: safeUser(user) });
+    }
+    if (user.verificationAttempts >= 5) {
+      return fail(
+        req,
+        res,
+        429,
+        "VERIFICATION_ATTEMPTS_EXCEEDED",
+        "Mã đã hết lượt thử.",
+      );
+    }
+    if (
+      !user.verificationHash ||
+      !user.verificationExpiresAt ||
+      user.verificationExpiresAt <= new Date()
+    ) {
+      return fail(
+        req,
+        res,
+        400,
+        "VERIFICATION_CODE_EXPIRED",
+        "Mã đã hết hạn.",
+      );
+    }
+
+    const expected = Buffer.from(user.verificationHash, "hex");
+    const actual = Buffer.from(hashCode(user._id, code), "hex");
+
+    if (!timingSafeEqual(expected, actual)) {
+      user.verificationAttempts += 1;
+      await user.save();
+      return fail(
+        req,
+        res,
+        400,
+        "VERIFICATION_CODE_INVALID",
+        "Mã không đúng.",
+      );
+    }
+
+    user.emailVerifiedAt = new Date();
+    user.verificationHash = null;
+    user.verificationExpiresAt = null;
+    user.verificationAttempts = 0;
+    await user.save();
+
+    return success(req, res, { user: safeUser(user) });
   },
 );
 

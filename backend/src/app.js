@@ -3,6 +3,7 @@ const mongoose = require("mongoose");
 const session = require("express-session");
 const MongoStore = require("connect-mongo").default;
 const { randomUUID } = require("node:crypto");
+const { success, failure } = require("./http/responses");
 
 const app = express();
 
@@ -39,29 +40,19 @@ app.use("/api/v1", (req, res, next) => {
   if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return next();
 
   if (req.get("Origin") !== process.env.APP_ORIGIN) {
-    return res.status(403).json({
-      error: {
-        code: "INVALID_ORIGIN",
-        message: "Nguồn yêu cầu không hợp lệ.",
-        retryable: false,
-      },
-      meta: { requestId: req.requestId },
-    });
+    return failure(req, res, 403, "INVALID_ORIGIN", "Nguồn yêu cầu không hợp lệ.");
   }
 
   next();
 });
 
 app.get("/health/live", (req, res) => {
-  res.json({ data: { status: "live" }, meta: { requestId: req.requestId } });
+  return success(req, res, { status: "live" });
 });
 
 app.get("/health/ready", (req, res) => {
   const ready = mongoose.connection.readyState === 1;
-  res.status(ready ? 200 : 503).json({
-    data: { status: ready ? "ready" : "not_ready" },
-    meta: { requestId: req.requestId },
-  });
+  return success(req, res, { status: ready ? "ready" : "not_ready" }, ready ? 200 : 503);
 });
 
 app.use("/api/v1", require("./routes/auth"));
@@ -70,10 +61,7 @@ app.use("/api/v1", require("./routes/listings"));
 app.use("/api/v1", require("./routes/commerce"));
 
 app.use((req, res) => {
-  res.status(404).json({
-    error: { code: "NOT_FOUND", message: "Không tìm thấy.", retryable: false },
-    meta: { requestId: req.requestId },
-  });
+  return failure(req, res, 404, "NOT_FOUND", "Không tìm thấy.");
 });
 
 app.use((err, req, res, next) => {
@@ -82,14 +70,13 @@ app.use((err, req, res, next) => {
   console.error(req.requestId, err);
   const status = Number.isInteger(err.status) ? err.status : 500;
 
-  res.status(status).json({
-    error: {
-      code: err.code || "INTERNAL_ERROR",
-      message: status === 500 ? "Lỗi máy chủ." : err.message,
-      retryable: false,
-    },
-    meta: { requestId: req.requestId },
-  });
+  return failure(
+    req,
+    res,
+    status,
+    err.code || "INTERNAL_ERROR",
+    status === 500 ? "Lỗi máy chủ." : err.message,
+  );
 });
 
 module.exports = app;
