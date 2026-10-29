@@ -48,6 +48,25 @@ function safeFields(fields) {
   };
 }
 
+router.get("/integrations/payments/vnpay/return", (req, res) => {
+  res.set({
+    "Cache-Control": "no-store",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+  });
+  return res.status(200).type("html").send(`<!doctype html>
+<html lang="vi">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Đã quay lại từ VNPAY</title>
+  <main style="max-width:36rem;margin:12vh auto;padding:1.5rem;font:16px/1.6 system-ui,sans-serif">
+    <h1>Đã quay lại từ VNPAY</h1>
+    <p>Hệ thống đang xác nhận kết quả thanh toán. Chỉ trạng thái đơn hàng trong ReWear Circle mới là kết quả cuối cùng.</p>
+    <p>Bạn có thể đóng trang này và kiểm tra lại đơn hàng sau ít phút.</p>
+  </main>
+</html>`);
+});
+
 router.get("/integrations/payments/vnpay/ipn", async (req, res) => {
   const config = loadVnpayConfig();
   if (!config) return sendAck(res, "99");

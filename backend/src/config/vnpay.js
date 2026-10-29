@@ -53,13 +53,18 @@ module.exports = function loadVnpayConfig(env = process.env) {
     throw new Error("VNPAY_QUERY_SERVER_IP must be the public IP used for QueryDr requests");
   }
 
+  const returnUrl = httpsUrl(env, "VNPAY_RETURN_URL");
+  if (new URL(returnUrl).origin === new URL(PAYMENT_URL).origin) {
+    throw new Error("VNPAY_RETURN_URL must point to the merchant site, not the VNPAY payment host");
+  }
+
   return Object.freeze({
     version: "2.1.0",
     tmnCode,
     hashSecret: required(env, "VNPAY_HASH_SECRET"),
     paymentUrl: PAYMENT_URL,
     queryDrUrl: QUERYDR_URL,
-    returnUrl: httpsUrl(env, "VNPAY_RETURN_URL"),
+    returnUrl,
     ipnUrl: httpsUrl(env, "VNPAY_IPN_URL"),
     queryServerIp,
   });

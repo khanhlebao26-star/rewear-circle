@@ -12,6 +12,18 @@ const {
 } = require("../src/services/vnpayProtocol");
 const { normalizeTransactionStatus } = require("../src/services/paymentSettlement");
 const { queryDrRequest } = require("../src/jobs/vnpayReconciliation");
+const loadVnpayConfig = require("../src/config/vnpay");
+
+test("VNPAY config rejects the payment gateway as the merchant return URL", () => {
+  assert.throws(() => loadVnpayConfig({
+    VNPAY_ENABLED: "true",
+    VNPAY_TMN_CODE: "ABCD1234",
+    VNPAY_HASH_SECRET: "test-hash-secret",
+    VNPAY_RETURN_URL: "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html",
+    VNPAY_IPN_URL: "https://merchant.example.test/api/v1/integrations/payments/vnpay/ipn",
+    VNPAY_QUERY_SERVER_IP: "203.0.113.10",
+  }), /must point to the merchant site/);
+});
 
 test("PAY URL uses sorted URL-encoded HMAC-SHA512 fields and rejects tampering", () => {
   const fields = {

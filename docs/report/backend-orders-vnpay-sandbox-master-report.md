@@ -1,8 +1,8 @@
 # Báo cáo tổng — Backend đơn hàng, VNPAY Sandbox và COD
 
 **Ngày cập nhật:** 29/10/2026  
-**Trạng thái:** A đã chốt hợp đồng; B đã chuẩn bị cục bộ nhưng Sandbox thật còn chờ merchant/IPN công khai; C đã có schema/index definitions nhưng migration DB cũ chưa chạy. D–J đã có code; K đã chạy đạt trên MongoDB replica set tạm dành riêng cho test. L (giao dịch Sandbox thật) và M (bàn giao đầy đủ) còn mở.  
-**Phạm vi đợt cập nhật:** Hoàn thiện payment attempt, IPN/settlement, worker QueryDr/hết hạn, xử lý kết quả muộn/xung đột, API Admin tra cứu và kiểm thử hành vi VNPAY/COD. Không kết nối DB dự án để migration và không chạy giao dịch Sandbox thật.
+**Trạng thái:** Merchant Sandbox đã cấp thông tin và cấu hình local được bật; người dùng báo backend đã khởi động thành công. Return URL đã được sửa sang trang backend chờ xác nhận. Chưa có giao dịch Sandbox thật hoặc xác nhận IPN từ SIT. C có schema/index definitions nhưng migration DB cũ chưa chạy. D–J đã có code; K đạt trên MongoDB replica set tạm. L (giao dịch thật) và M (bàn giao đầy đủ) còn mở.
+**Phạm vi đợt cập nhật:** Hoàn thiện Return URL và fail-fast validation cho cấu hình VNPAY, cập nhật hướng dẫn môi trường; không kết nối DB dự án để migration và chưa thể chạy giao dịch Sandbox thật trong phiên này.
 
 ## 1. Mục đích và cách cập nhật
 
@@ -204,7 +204,7 @@ Danh sách dùng page bắt đầu 1, limit mặc định 20/tối đa 100, mớ
 | `GET /admin/payments/{attemptId}` | Admin | Hồ sơ attempt, sự kiện đã lọc, lịch đối chiếu/hold/xung đột | 404/403; PAYMENT_DETAIL_READ |
 | `POST /checkouts/{checkoutId}/confirm` | Route cũ bị ngừng | 410 ENDPOINT_RETIRED, không tác dụng phụ | Không có nghiệp vụ xác nhận thanh toán từ client |
 
-`providerReference` trên API Admin là merchant reference gửi bằng `vnp_TxnRef`; response trả riêng `providerTransactionNo` để tránh nhầm hai mã. Return URL cấu hình cố định về trang kết quả frontend; frontend đăng nhập và đọc PAY-02, không đọc query để kết luận PAID. Chưa cần route backend Return URL mới.
+`providerReference` trên API Admin là merchant reference gửi bằng `vnp_TxnRef`; response trả riêng `providerTransactionNo` để tránh nhầm hai mã. Khi chưa có frontend, Return URL dùng trang thông báo chờ ở backend; trang không tin query để kết luận PAID. Khi frontend có trang kết quả, cấu hình Return URL về giao diện và đọc PAY-02.
 
 Giỏ giữ các route hiện tại `/cart`, `/cart/items`; đổi tên giỏ không thuộc Bước A này. HTTP GET đọc không giải phóng món hoặc sửa trạng thái tài chính; worker xử lý hết hạn.
 
@@ -288,12 +288,12 @@ Audit nghiệp vụ gồm tạo/hủy Checkout/Order, tạo attempt, nhận/áp 
 
 ## 9. Những việc chưa thực hiện và tiêu chí mở bước tiếp theo
 
-- Không đọc hoặc ghi `.env` chứa secret. Việc cấu hình merchant/URL trong môi trường chạy thật là **chưa xác minh**; không khẳng định đã có hoặc chưa có tài khoản Sandbox.
+- Merchant Sandbox đã cấp credential và cấu hình được giữ trong `.env` local bị Git ignore; không ghi giá trị vào report. Chưa có giao dịch PAY/IPN/QueryDr thật.
 - Chưa gọi thanh toán/IPN/QueryDr Sandbox, chưa có fixture thực tế; mapping và ACK chưa được chứng thực bằng giao dịch.
-- Schema và index definitions đã thêm ở Bước C; chưa xác minh MongoDB đã tạo các index và chưa migrate/xóa dữ liệu. Các route Checkout/COD đã có; VNPAY attempt/IPN và worker chưa có. Chốt migrate tại chỗ, không reset demo; cần backup và dry-run trước khi cập nhật bản ghi.
-- Chưa chạy test tự động hoặc kiểm thử runtime cho các thay đổi B–E; chưa xác nhận server khởi động với cấu hình Sandbox, index được tạo hoặc cổng phản hồi đúng. Kết quả test cụm kiểm duyệt trước đây không phải bằng chứng thanh toán.
+- Schema và index definitions đã thêm ở Bước C; chưa xác minh MongoDB đã tạo các index và chưa migrate/xóa dữ liệu. VNPAY attempt/IPN/worker đã có code. Chốt migrate tại chỗ, không reset demo; cần backup và dry-run trước khi cập nhật bản ghi.
+- Người dùng xác nhận backend trên máy đã lắng nghe cổng 4000; môi trường công cụ không kết nối được API local hoặc DNS tunnel nên chưa xác nhận callback public. Kết quả test cục bộ không phải bằng chứng thanh toán Sandbox.
 
-Phần chuẩn bị tại repo của B đã xong; để nghiệm thu đầy đủ cần cấu hình merchant và URL IPN/Return công khai, kiểm tra endpoint có thể truy cập, xác minh chữ ký/request/response bằng fixture đáng tin cậy và chạy giao dịch Sandbox có bằng chứng đã che dữ liệu. Schema C đã được chuẩn bị; D/E đã triển khai code nhưng chưa chạy kiểm thử. Tiếp theo cần hoàn tất F–H và K–L; chỉ dùng mapping đã xác minh để giải phóng món, trường hợp chưa chắc luôn giữ chờ/điều tra.
+Code B/F–J đã có; cấu hình merchant được nạp ở worktree Dung và validation cấu hình đạt. `VNPAY_RETURN_URL` cũ trỏ tới host tạo thanh toán; nay chuyển sang route thông báo tĩnh của backend và cấu hình chặn nhầm host thanh toán. Đóng L còn cần lưu IPN URL tại VNPAYGW SIT, xác nhận tunnel public, chạy API và worker, rồi hoàn thành giao dịch Sandbox có bằng chứng đã che. Schema C đã chuẩn bị; dữ liệu cũ vẫn chờ backup/dry-run. Trường hợp kết quả chưa chắc tiếp tục giữ chờ/điều tra.
 
 ## 10. Bước B — Môi trường và hợp đồng VNPAY Sandbox
 
@@ -313,7 +313,7 @@ Phần chuẩn bị tại repo của B đã xong; để nghiệm thu đầy đ�
 
 ### Còn chờ để nghiệm thu B đầy đủ
 
-- Điền cấu hình thật trong môi trường chạy riêng tư và đăng ký TmnCode/hash secret/IP outbound với Sandbox; kiểm tra Return/IPN URL có HTTPS công khai và có thể nhận request. Không ghi secret vào repo hoặc báo cáo.
+- Merchant Sandbox đã cấp thông tin và `.env` local được bật; không commit secret. Người dùng báo API đã chạy ở cổng 4000, còn xác nhận IPN URL trong VNPAYGW SIT và tính truy cập công khai của tunnel.
 - Dùng fixture/tài khoản được cấp để xác minh request/response, checksum và ACK; lưu bằng chứng đã che dữ liệu. Chưa có giao dịch Sandbox nào được thực hiện trong bước này.
 
 Nguồn: [PAY và IPN](https://sandbox.vnpayment.vn/apis/docs/thanh-toan-pay/pay.html), [QueryDr](https://sandbox.vnpayment.vn/apis/docs/truy-van-hoan-tien/querydr%26refund.html), [bảng mã lỗi](https://sandbox.vnpayment.vn/apis/docs/bang-ma-loi/).
@@ -348,7 +348,7 @@ Chưa kết nối DB hoặc xem `.env`; chưa biết số lượng/độ nhất 
 | Bước | Trạng thái | Kết quả hoặc điều kiện cần cập nhật |
 | --- | --- | --- |
 | A — Hợp đồng, trạng thái, ma trận thanh toán | Hoàn tất về tài liệu, đã bổ sung COD | API hai phương thức, collection/return COD, snapshot, quyền, idempotency, VNPAY lịch/hold/ACK; xác nhận cổng còn B/L |
-| B — Môi trường và giao thức Sandbox | Chuẩn bị cục bộ hoàn tất; tích hợp Sandbox chờ cấu hình ngoài repo | `.env.example`, kiểm tra fail-fast khi bật, endpoint/protocol contract và giới hạn QueryDr đã ghi; còn merchant, IPN HTTPS public, fixture và giao dịch thật |
+| B — Môi trường và giao thức Sandbox | Cấu hình local hợp lệ; xác nhận SIT/public callback còn mở | Merchant đã cấp cấu hình, API được người dùng khởi động; Return URL trỏ về backend. Chưa xác minh IPN URL ở SIT/tunnel public và giao dịch thật |
 | C — Model, index, dữ liệu cũ | Schema/index definitions và kế hoạch migration hoàn tất; DB migration chờ backup/dry-run | Models Payment/COD, snapshot, lease, ownership/audit và index đã khai báo; chưa xác minh index trên MongoDB hoặc backfill dữ liệu cũ |
 | D — Checkout/Order theo phương thức | Đã triển khai; kiểm thử tích hợp đạt trong K | POST /checkouts rẽ nhánh COD/VNPAY trong transaction; idempotency fingerprint, kiểm giá/version, snapshot, cập nhật có điều kiện và dọn giỏ |
 | E — Đơn mua/bán, COD và hủy | Đã triển khai; kiểm thử tích hợp đạt trong K | Lịch sử/DTO có quyền, hủy VNPAY trước attempt, COD hủy/thu/hoàn, Admin tra cứu, shipment/receipt tối thiểu, cập nhật media theo Order |
@@ -358,7 +358,7 @@ Chưa kết nối DB hoặc xem `.env`; chưa biết số lượng/độ nhất 
 | I — Muộn/xung đột | Đã triển khai; có kiểm thử tích hợp | Thành công đến muộn giữ SUCCESS tài chính; xung đột một hoặc hai Buyer khóa quyền nhận, không ghi đè Listing hoặc tự hoàn tiền |
 | J — Điều tra, quyền và log | Đã triển khai; có kiểm thử tích hợp | GET Admin lọc/chi tiết chỉ đọc, audit lần tra cứu, không trả payment URL/địa chỉ hoặc payload thô |
 | K — Kiểm thử tự động | Đạt trên MongoDB replica set dành riêng cho test | Domain 8/8, protocol 4/4, commerce/COD/VNPAY 1/1, moderation regression 1/1; QueryDr dùng response giả lập có checksum, chưa gọi Sandbox thật |
-| L — Sandbox thật | Chưa thực hiện | Thành công/thất bại/IPN/QueryDr và xác nhận mapping |
+| L — Sandbox thật | Chưa thực hiện | Cần xác nhận IPN public; giao dịch thành công/thất bại/IPN/QueryDr và mapping |
 | M — Bàn giao | Chưa thực hiện | Docs, seed, mẫu request, worker và bằng chứng nghiệm thu |
 
 Các lần cập nhật sau giữ lịch sử quyết định quan trọng tại đây; nếu thay hợp đồng A phải ghi lý do, ảnh hưởng code/API/test và ngày quyết định mới.
@@ -437,7 +437,16 @@ Tích hợp cover attempt/idempotency, nhiều Seller, snapshot/địa chỉ b�
 
 ### Giới hạn còn lại sau F–K
 
-- Chưa có credential hoặc bằng chứng merchant Sandbox, IPN HTTPS công khai, giao dịch PAY/IPN/QueryDr thật. HMAC/mapping được test cục bộ với fixture; bước L chưa hoàn tất.
+- Credential merchant đã có trong cấu hình local; chưa có bằng chứng IPN HTTPS public hay giao dịch PAY/IPN/QueryDr thật. HMAC/mapping được kiểm thử cục bộ; bước L chưa hoàn tất.
 - Chưa kết nối MongoDB dự án để xác minh index trên dữ liệu đang chạy hoặc backfill dữ liệu cũ. C vẫn cần backup/dry-run/migrate có kiểm soát.
 - Restart được kiểm tra bằng lease hết hạn được worker khác nhận lại, không bằng việc kill/restart một tiến trình production; cần nghiệm thu vận hành khi triển khai worker thật.
 - Toàn bộ thay đổi trạng thái cần chạy trên MongoDB hỗ trợ transaction/replica set. Không kết luận đã chạy Sandbox hoặc migrate dữ liệu thật từ bộ test này.
+
+## 15. Hoàn thiện Return URL Sandbox trong worktree Dung (29/10/2026)
+
+- Cấu hình `.env` ban đầu gửi trình duyệt quay lại `sandbox.vnpayment.vn/paymentv2/vpcpay.html`, tức endpoint tạo thanh toán, không phải website merchant. Trong worktree `w2-be`, Return URL local đã được đặt cùng host Cloudflare với IPN và trỏ `/api/v1/integrations/payments/vnpay/return`; file `.env` bị Git ignore.
+- Thêm trang Return tĩnh thông báo backend đang xác nhận kết quả. Trang không dùng query callback làm căn cứ thanh toán, không ghi Payment/Checkout/Order. IPN/QueryDr vẫn là nguồn trạng thái tài chính.
+- Thêm validation fail-fast để từ chối Return URL trỏ cùng host trang thanh toán VNPAY. Cập nhật `.env.example`, API Routes và API Contracts.
+- Người dùng xác nhận backend trước đó đã chạy trên cổng 4000 sau khi sửa IP QueryDr; riêng worktree này, cấu hình VNPAY được nạp thành công và Return/IPN paths hợp lệ. Chưa xác minh MongoDB/API trong phiên công cụ, tunnel public hoặc IPN đã lưu ở VNPAYGW SIT.
+- `node backend/test/vnpay.test.js` đạt 5/5; `node --check` cho config/route/test, nạp cấu hình local và `git diff --check` đều đạt. Chưa chạy bộ integration MongoDB trong worktree hoặc giao dịch Sandbox thật.
+- Cần khởi động lại `npm run dev` trong worktree `w2-be` để nạp `.env` đã chỉnh. Worker chạy terminal riêng bằng `npm run worker:vnpay`. Chưa chạy giao dịch Sandbox thật; do đó L còn mở.

@@ -509,6 +509,15 @@ Webhook sai chữ ký, sai mã tham chiếu, số tiền hoặc tiền tệ bị
 
 VNPAY IPN dùng GET /integrations/payments/vnpay/ipn và phản hồi JSON RspCode/Message; cấu hình URL công khai với cổng.
 
+### **PAY-06 — Buyer quay lại từ VNPAY**
+
+- **Method:** GET
+- **Route:** /integrations/payments/vnpay/return
+- **Quyền:** Công khai; chỉ hiển thị thông báo
+- **Phân loại:** Hỗ trợ tích hợp
+
+Hiển thị hướng dẫn kiểm tra trạng thái sau khi trình duyệt quay lại từ cổng. Endpoint không xác nhận thanh toán, không cập nhật Payment/Checkout/Order và không thay thế IPN hoặc QueryDr. Khi có frontend, chuyển `VNPAY_RETURN_URL` sang trang kết quả frontend.
+
 ### **PAY-04 — Tra cứu giao dịch**
 
 - **Method:** GET

@@ -518,6 +518,8 @@ Nếu dữ liệu sai, thiếu hoặc chưa thể kết luận:
 - Không tự động đánh dấu PAID.
 - Lưu thông tin cần thiết để điều tra.
 - Trả phản hồi cho cổng theo hợp đồng của nhà cung cấp được lựa chọn.
+
+`GET /integrations/payments/vnpay/return` là trang thông báo chờ khi frontend chưa có. Route không dùng query Return để quyết định kết quả và không cập nhật trạng thái thanh toán. Khi frontend được triển khai, Return URL chuyển về giao diện kết quả; giao diện đọc trạng thái qua API Buyer.
 #### **Xem trạng thái thanh toán**
 
 GET /checkouts/{checkoutId}/payment
