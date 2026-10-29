@@ -1,7 +1,7 @@
 # Báo cáo tổng — Backend đơn hàng, VNPAY Sandbox và COD
 
 **Ngày cập nhật:** 29/10/2026  
-**Trạng thái:** Merchant Sandbox đã cấp thông tin và cấu hình local được bật; người dùng báo backend đã khởi động thành công. Return URL đã được sửa sang trang backend chờ xác nhận. Chưa có giao dịch Sandbox thật hoặc xác nhận IPN từ SIT. C có schema/index definitions nhưng migration DB cũ chưa chạy. D–J đã có code; K đạt trên MongoDB replica set tạm. L (giao dịch thật) và M (bàn giao đầy đủ) còn mở.
+**Trạng thái:** Merchant Sandbox đã cấp thông tin và cấu hình local được bật. Tunnel công khai hiện trả `health/ready`, nhưng Return URL dự kiến trả 404 nên chưa phục vụ đúng bản code trong worktree `w2-be`; IPN URL chưa được xác minh trong SIT. Chưa có giao dịch Sandbox thật. C có schema/index definitions nhưng migration DB cũ chưa chạy. D–J đã có code; K đạt trên MongoDB replica set tạm. L (giao dịch thật) và M (bàn giao đầy đủ) còn mở.
 **Phạm vi đợt cập nhật:** Hoàn thiện Return URL và fail-fast validation cho cấu hình VNPAY, cập nhật hướng dẫn môi trường; không kết nối DB dự án để migration và chưa thể chạy giao dịch Sandbox thật trong phiên này.
 
 ## 1. Mục đích và cách cập nhật
@@ -348,7 +348,7 @@ Chưa kết nối DB hoặc xem `.env`; chưa biết số lượng/độ nhất 
 | Bước | Trạng thái | Kết quả hoặc điều kiện cần cập nhật |
 | --- | --- | --- |
 | A — Hợp đồng, trạng thái, ma trận thanh toán | Hoàn tất về tài liệu, đã bổ sung COD | API hai phương thức, collection/return COD, snapshot, quyền, idempotency, VNPAY lịch/hold/ACK; xác nhận cổng còn B/L |
-| B — Môi trường và giao thức Sandbox | Cấu hình local hợp lệ; xác nhận SIT/public callback còn mở | Merchant đã cấp cấu hình, API được người dùng khởi động; Return URL trỏ về backend. Chưa xác minh IPN URL ở SIT/tunnel public và giao dịch thật |
+| B — Môi trường và giao thức Sandbox | Cấu hình local hợp lệ; SIT/IPN còn chờ xác nhận | Tunnel công khai trả `health/ready`; Return URL hiện trả 404, cần chuyển backend trên cổng 4000 sang worktree `w2-be`. Chưa xác minh IPN URL đã lưu ở SIT |
 | C — Model, index, dữ liệu cũ | Schema/index definitions và kế hoạch migration hoàn tất; DB migration chờ backup/dry-run | Models Payment/COD, snapshot, lease, ownership/audit và index đã khai báo; chưa xác minh index trên MongoDB hoặc backfill dữ liệu cũ |
 | D — Checkout/Order theo phương thức | Đã triển khai; kiểm thử tích hợp đạt trong K | POST /checkouts rẽ nhánh COD/VNPAY trong transaction; idempotency fingerprint, kiểm giá/version, snapshot, cập nhật có điều kiện và dọn giỏ |
 | E — Đơn mua/bán, COD và hủy | Đã triển khai; kiểm thử tích hợp đạt trong K | Lịch sử/DTO có quyền, hủy VNPAY trước attempt, COD hủy/thu/hoàn, Admin tra cứu, shipment/receipt tối thiểu, cập nhật media theo Order |
@@ -358,7 +358,7 @@ Chưa kết nối DB hoặc xem `.env`; chưa biết số lượng/độ nhất 
 | I — Muộn/xung đột | Đã triển khai; có kiểm thử tích hợp | Thành công đến muộn giữ SUCCESS tài chính; xung đột một hoặc hai Buyer khóa quyền nhận, không ghi đè Listing hoặc tự hoàn tiền |
 | J — Điều tra, quyền và log | Đã triển khai; có kiểm thử tích hợp | GET Admin lọc/chi tiết chỉ đọc, audit lần tra cứu, không trả payment URL/địa chỉ hoặc payload thô |
 | K — Kiểm thử tự động | Đạt trên MongoDB replica set dành riêng cho test | Domain 8/8, protocol 4/4, commerce/COD/VNPAY 1/1, moderation regression 1/1; QueryDr dùng response giả lập có checksum, chưa gọi Sandbox thật |
-| L — Sandbox thật | Chưa thực hiện | Cần xác nhận IPN public; giao dịch thành công/thất bại/IPN/QueryDr và mapping |
+| L — Sandbox thật | Chưa nghiệm thu; đang chờ cấu hình chạy đúng bản code | Đã mở được trang SIT đăng nhập; tunnel health sẵn sàng nhưng Return URL 404. Cần chạy backend worktree `w2-be`, đăng ký IPN URL trong SIT, chạy worker và hoàn tất các ca thanh toán thật |
 | M — Bàn giao | Chưa thực hiện | Docs, seed, mẫu request, worker và bằng chứng nghiệm thu |
 
 Các lần cập nhật sau giữ lịch sử quyết định quan trọng tại đây; nếu thay hợp đồng A phải ghi lý do, ảnh hưởng code/API/test và ngày quyết định mới.
@@ -450,3 +450,14 @@ Tích hợp cover attempt/idempotency, nhiều Seller, snapshot/địa chỉ b�
 - Người dùng xác nhận backend trước đó đã chạy trên cổng 4000 sau khi sửa IP QueryDr; riêng worktree này, cấu hình VNPAY được nạp thành công và Return/IPN paths hợp lệ. Chưa xác minh MongoDB/API trong phiên công cụ, tunnel public hoặc IPN đã lưu ở VNPAYGW SIT.
 - `node backend/test/vnpay.test.js` đạt 5/5; `node --check` cho config/route/test, nạp cấu hình local và `git diff --check` đều đạt. Chưa chạy bộ integration MongoDB trong worktree hoặc giao dịch Sandbox thật.
 - Cần khởi động lại `npm run dev` trong worktree `w2-be` để nạp `.env` đã chỉnh. Worker chạy terminal riêng bằng `npm run worker:vnpay`. Chưa chạy giao dịch Sandbox thật; do đó L còn mở.
+
+## 16. Kiểm tra cổng SIT và tunnel công khai (29/10/2026)
+
+- Email Merchant cung cấp trang thanh toán TEST `https://sandbox.vnpayment.vn/paymentv2/vpcpay.html` và cổng kiểm thử SIT `https://sandbox.vnpayment.vn/vnpaygw-sit-testing/user/login`. Trang thanh toán trùng endpoint cố định trong adapter; cổng SIT mở được nhưng yêu cầu đăng nhập.
+- Từ trình duyệt, `https://arrangement-prisoners-ping-undertaken.trycloudflare.com/health/ready` trả `{"data":{"status":"ready"}}`; tunnel HTTPS đang tới một backend có MongoDB sẵn sàng.
+- URL `https://arrangement-prisoners-ping-undertaken.trycloudflare.com/api/v1/integrations/payments/vnpay/return` lại trả `NOT_FOUND`. Bản `w2-be` có route Return tĩnh tại đúng path này. Vì vậy tunnel đang đưa request tới một backend chưa có route mới hoặc một tiến trình cũ; chưa nên tạo giao dịch Sandbox qua cấu hình hiện tại.
+- `.env` local trong worktree `w2-be` đang đặt IPN là `https://arrangement-prisoners-ping-undertaken.trycloudflare.com/api/v1/integrations/payments/vnpay/ipn` và Return là cùng host với path `/api/v1/integrations/payments/vnpay/return`. Không ghi giá trị bí mật vào báo cáo.
+- Worktree `w2-be` chưa có `backend/node_modules` nhưng có `package-lock.json`; cần chạy `npm ci` trong thư mục `backend` trước khi khởi động API/worker.
+- Cần bảo đảm tiến trình trên cổng 4000 được chạy từ worktree `w2-be` (dừng tiến trình khác đang chiếm cổng nếu có), giữ tunnel trỏ tới `localhost:4000`, rồi kiểm tra lại Return URL phải hiện trang “Đã quay lại từ VNPAY”. Đăng nhập cổng SIT bằng tài khoản Merchant và lưu chính xác IPN URL ở trên; nếu tạo lại Quick Tunnel và hostname đổi, cập nhật cả `.env` lẫn SIT.
+- Chạy `npm run worker:vnpay` trong một terminal riêng. Sau khi API, IPN public, worker và dữ liệu Buyer/Seller demo hoạt động, tiếp tục các ca L: thanh toán nhiều Seller thành công; thất bại/hủy và QueryDr; IPN lặp/sai; đối chiếu số tiền, reference, mapping và lưu bằng chứng đã che dữ liệu nhạy cảm.
+- **Trạng thái L:** chưa hoàn tất. Phiên công cụ không có phiên đăng nhập Merchant hoặc phiên Buyer/Seller để tạo giao dịch; việc đăng ký IPN và thanh toán cần thao tác trong tài khoản Sandbox. Sau khi người dùng hoàn tất các mục setup trên, có thể tiếp tục nghiệm thu phần còn lại.
