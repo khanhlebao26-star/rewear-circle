@@ -1,10 +1,10 @@
 # **API Routes — Rewear Circle (MVP)**
 
-Cập nhật 26/10/2026: bổ sung xác minh email, cập nhật vận đơn và hợp đồng khiếu nại.
+Cập nhật 29/10/2026: bổ sung trạng thái triển khai Checkout/Order, COD, VNPAY payment attempt/IPN, đối chiếu QueryDr và API tra cứu Admin.
 
-**Danh mục API RoutesNgày cập nhật:** 24/10/2026**Trạng thái:** Đề xuất cho MVP — chưa xác nhận là đã triển khai
+**Danh mục API RoutesNgày cập nhật:** 28/10/2026**Trạng thái:** Danh mục gồm hợp đồng đề xuất và route đã triển khai; không khẳng định mọi route trong MVP đã có trong code.
 
-Tổng cộng: 44 route ứng dụng và 3 route hạ tầng sau khi bổ sung route Buyer hủy trước thanh toán và xác nhận đã nhận. Các đường dẫn là đề xuất kỹ thuật; quy tắc nghiệp vụ đã chốt phải được giữ nguyên.
+Danh mục bao gồm hợp đồng route và trạng thái triển khai. Tin đăng/kiểm duyệt và luồng VNPAY/COD F–J đã có code; K đã kiểm thử trên MongoDB replica set riêng. Giao dịch VNPAY Sandbox thật, migration DB cũ và khiếu nại DELIVERY/ITEM vẫn chưa nghiệm thu. Xem [báo cáo tổng đơn hàng và VNPAY](../report/backend-orders-vnpay-sandbox-master-report.md).
 
 ## **1. Mục đích và cách đọc**
 
@@ -17,7 +17,7 @@ Tài liệu này liệt kê các API cần có để phục vụ những chức 
 - Thanh toán sandbox.
 - Báo cáo, khiếu nại và hỗ trợ.
 - Tải ảnh và kiểm tra tình trạng hoạt động của hệ thống.
-Đây là **danh mục thiết kế API**, không phải xác nhận rằng các route đã được lập trình.
+Đây là hợp đồng tổng thể. Trạng thái triển khai theo từng phạm vi được ghi trong [báo cáo backend tuần 2](../report/backend-week2-master-report.md).
 
 ### **1.1. Quy ước đường dẫn**
 
@@ -154,7 +154,8 @@ Quy tắc:
 - Giá lọc được tính bằng VND.
 - Có thể bỏ trống một trong hai đầu giá.
 - Nếu minPrice > maxPrice, trả VALIDATION_ERROR.
-- Danh sách phải hỗ trợ phân trang.
+- Tìm kiếm/lọc cần tài khoản; feed không tham số tìm kiếm vẫn công khai.
+- Phân trang dùng page/limit, mặc định 20, tối đa 100; sắp xếp mới nhất trước và chỉ lọc revision đang được duyệt.
 ### **DISC-02 — Xem chi tiết tin**
 
 - **Method:** GET
@@ -165,7 +166,7 @@ Trả về thông tin chi tiết của một món đồ và trạng thái mua hi
 
 Tin đang chờ duyệt, bị từ chối hoặc bị ẩn không được hiển thị như tin công khai.
 
-Tin SOLD xem được qua liên kết trực tiếp với watermark Đã bán và không có nút mua.
+Tin RESERVED xem được nhưng không mua thêm; tin SOLD xem được qua liên kết trực tiếp với watermark “Đã bán” và không có nút mua.
 
 ## **4. LST — Seller quản lý tin đăng**
 
@@ -256,6 +257,22 @@ SHOW: Seller yêu cầu hiện lại tin. Chỉ được phép gỡ trạng thá
 - Không đang chờ duyệt bản sửa.
 Seller không được tự gỡ trạng thái ẩn do Admin đặt hoặc mở bán món đang RESERVED hay SOLD.
 
+### **NOT-01 — Danh sách thông báo của tôi**
+
+- **Method:** GET
+- **Route:** /me/notifications?page=&limit=
+- **Quyền:** Tài khoản
+- **Phân loại:** Bổ trợ
+Trả về thông báo kiểm duyệt dành riêng cho người nhận hiện tại, lý do liên quan, trạng thái đã đọc, thời điểm tạo và tổng số thông báo chưa đọc. Mặc định 20 mục/trang, tối đa 100.
+
+### **NOT-02 — Đánh dấu thông báo đã đọc**
+
+- **Method:** PATCH
+- **Route:** /me/notifications/{notificationId}/read
+- **Quyền:** Người nhận thông báo
+- **Phân loại:** Bổ trợ
+Chỉ cập nhật thông báo của người dùng hiện tại. Gọi lại với thông báo đã đọc trả trạng thái hiện tại; ID không thuộc người gọi hoặc không tồn tại trả 404.
+
 ## **5. LST/MOD — Admin duyệt và ẩn tin**
 
 **Mục đích:** Hỗ trợ Admin kiểm duyệt phiên bản tin và quản lý việc hiển thị.
@@ -285,6 +302,7 @@ Trả về form đầy đủ, lịch sử phiên bản và thông tin cần thi�
 Admin chọn APPROVE hoặc REJECT và cung cấp lý do phù hợp.
 
 Backend phải ghi lại người thực hiện, thời điểm, quyết định và kết quả. Việc duyệt phải cập nhật đúng phiên bản, không vô tình làm hiện phiên bản khác đang bị ẩn.
+Từ chối bắt buộc có lý do. Quyết định và thông báo nội bộ cho Seller được lưu cùng transaction; đây chưa phải gửi email.
 
 ### **ADM-04 — Admin ẩn hoặc gỡ ẩn tin**
 
@@ -294,12 +312,17 @@ Backend phải ghi lại người thực hiện, thời điểm, quyết định
 - **Phân loại:** Cốt lõi
 Admin thay đổi trạng thái hiển thị theo quyền kiểm duyệt.
 
+Request gồm `action` (`HIDE` hoặc `SHOW`) và `reason` bắt buộc. `HIDE` có thể nhận `requireCorrection: true` để yêu cầu Seller sửa và gửi lại nếu không có revision đang chờ duyệt và món chưa bán; khi đó tin được đặt `reviewHold` và lý do sửa được lưu. Quyết định, audit và thông báo nội bộ cho Seller được ghi cùng transaction.
+
 Thao tác này không được:
 
 - Mở bán món đang RESERVED hoặc SOLD.
 - Xóa trạng thái Seller tự ẩn.
 - Bỏ qua yêu cầu duyệt phiên bản tin.
+- Làm hiện tin chưa có phiên bản được duyệt, đang chờ duyệt/yêu cầu sửa, đang bị khóa điều tra hoặc không ở trạng thái AVAILABLE.
 ## **6. ORD — Giỏ hàng, checkout và đơn hàng**
+
+Hợp đồng chốt Bước A ngày 28/10/2026 và được triển khai ở D–J: xem [báo cáo tổng đơn hàng và VNPAY Sandbox](../report/backend-orders-vnpay-sandbox-master-report.md) để biết request/response, quyền, idempotency và trạng thái. POST /checkouts là điểm tạo Checkout/Order duy nhất; route confirm cũ trả 410; `/me/sales` giữ alias của danh sách đơn bán.
 
 **Mục đích:** Xử lý quá trình Buyer chọn món, xác nhận mua và theo dõi đơn.
 
@@ -406,13 +429,13 @@ Trả về thông tin đơn hàng và snapshot sản phẩm đã lưu tại th�
 
 Seller chỉ được xem đơn thuộc về mình, không được xem đơn của Seller khác trong cùng Checkout.
 
-### **ORD-11 — Tạo hoặc cập nhật thông tin vận chuyển**
+### **ORD-11 — Ghi nhận thông tin vận chuyển**
 
 - **Method:** PUT
 - **Route:** /orders/{orderId}/shipment
 - **Quyền:** Seller sở hữu Order
 - **Phân loại:** Cốt lõi
-Tạo hoặc cập nhật thông tin vận chuyển cho Order đã thanh toán.
+Ghi nhận lần đầu thông tin vận chuyển cho Order đủ điều kiện giao.
 
 Request gồm:
 
@@ -421,10 +444,10 @@ Request gồm:
 - shippedAt: thời điểm gửi hàng, do server ghi nhận khi xác nhận lần đầu đã gửi.
 Quy tắc:
 
-- Order phải ở trạng thái PAID.
+- VNPAY Order phải ở trạng thái PAID; COD Order có thể ở CONFIRMED/UNPAID.
 - Seller chỉ được thao tác trên Order thuộc mình.
-- Seller có thể sửa carrierName và trackingCode khi Order chưa COMPLETED.
-- shippedAt không được tự ý thay đổi khi chỉnh sửa mã vận đơn.
+- Seller chỉ ghi lần đầu carrierName/trackingCode; shippedAt do server ghi.
+- Gửi lại cùng thông tin trả lại kết quả hiện tại; thông tin khác sau khi đã gửi trả 409.
 - Mỗi lần thay đổi phải được ghi audit log.
 - Không tích hợp API hãng vận chuyển trong MVP; backend không tuyên bố rằng trạng thái giao hàng đã được hãng vận chuyển xác minh.
 ### **ORD-12 — Buyer xác nhận đã nhận hàng**
@@ -433,7 +456,7 @@ Quy tắc:
 - **Route:** /orders/{orderId}/receipt-confirmation
 - **Quyền:** Buyer của Order
 - **Phân loại:** Cốt lõi
-Buyer xác nhận đã thực sự nhận được sản phẩm. Order phải ở trạng thái PAID; backend chuyển Order sang COMPLETED.
+Buyer xác nhận đã thực sự nhận được sản phẩm sau khi Seller ghi nhận đã gửi. VNPAY Order phải PAID; COD Order có thể CONFIRMED. Backend chuyển Order sang COMPLETED và giữ nguyên paymentStatus COD, vì nhận hàng không tự xác nhận đã thu tiền.
 
 Request phải hỗ trợ Idempotency-Key hoặc cơ chế tương đương để tránh xử lý lặp. Việc xác nhận không tự động hoàn tiền hoặc đóng các Case đang mở.
 
@@ -518,6 +541,8 @@ Thông tin nhạy cảm phải được che hoặc loại bỏ.
 - **Phân loại:** Cốt lõi
 Cho phép người dùng báo cáo tin đăng trước khi mua.
 
+Chỉ tài khoản đã xác minh email, không phải chủ tin, được gửi. Lý do dùng tập đã chốt trong hợp đồng; `OTHER` bắt buộc mô tả. Bằng chứng là 0–5 ảnh `CASE_EVIDENCE` do chính người báo tải lên. Mỗi tài khoản tối đa 5 báo cáo/ngày.
+
 Request gồm:
 
 - listingId.
@@ -525,6 +550,7 @@ Request gồm:
 - Mô tả bổ sung nếu có.
 - Bằng chứng nếu có.
 Backend tự xác định người báo cáo từ phiên đăng nhập, không tin reporterId do client tự gửi.
+Backend lưu từng Report gốc riêng. Report mới gắn vào Case REPORT cùng Listing đang OPEN/IN_REVIEW; nếu không có thì tạo Case OPEN mới. Tạo Report, cập nhật Case, audit và thông báo tiếp nhận phải nguyên tử.
 
 ### **MOD-02 — Tạo khiếu nại đơn hàng**
 
@@ -556,6 +582,7 @@ Mỗi khiếu nại phải lưu thông tin cần thiết tại thời điểm t�
 Trả về danh sách vụ việc liên quan đến báo cáo tin hoặc khiếu nại đơn hàng.
 
 Nhiều báo cáo cùng liên quan đến một tin hoặc đơn có thể được nhóm vào một vụ việc. Tuy nhiên, từng báo cáo gốc vẫn phải được lưu riêng.
+Trong phạm vi hiện tại, hàng chờ Admin hỗ trợ Case REPORT với bộ lọc status và phân trang.
 
 ### **MOD-04 — Chi tiết vụ việc**
 
@@ -564,6 +591,7 @@ Nhiều báo cáo cùng liên quan đến một tin hoặc đơn có thể đư�
 - **Quyền:** Admin
 - **Phân loại:** Cốt lõi
 Trả về thông tin cần thiết để điều tra, bao gồm báo cáo gốc, bằng chứng và lịch sử xử lý, trong phạm vi quyền được cấp.
+Thông tin người báo ở mức tối thiểu; ghi chú nội bộ chỉ Admin xem được.
 
 ### **MOD-05 — Ghi nhận quyết định xử lý vụ việc**
 
@@ -574,6 +602,7 @@ Trả về thông tin cần thiết để điều tra, bao gồm báo cáo gốc
 Ghi nhận quyết định xử lý vụ việc theo Business Rules đã thống nhất, chẳng hạn giữ nguyên quyết định hiện tại, yêu cầu sửa tin hoặc tiếp tục ẩn tin.
 
 Nếu quyết định làm thay đổi trạng thái hiển thị, việc thay đổi phải đi qua quy trình LST tương ứng. Quyết định xử lý vụ việc không được bỏ qua quy tắc duyệt tin hoặc trạng thái bán hàng.
+Case phải đi OPEN → IN_REVIEW → CLOSED; đóng bắt buộc outcomeCode và outcomeSummary. OutcomeCode hiện gồm NO_ACTION, CORRECTION_REQUIRED, LISTING_HIDDEN, OTHER. Người báo nhận thông báo tiếp nhận và tóm tắt kết quả, không nhận internalNote.
 
 ### **MOD-06 — Phân công vụ việc**
 
@@ -626,6 +655,8 @@ Yêu cầu quyền tải ảnh phục vụ:
 - LISTING_IMAGE: ảnh tin đăng.
 - CASE_EVIDENCE: bằng chứng cho báo cáo hoặc khiếu nại.
 Đã chốt giới hạn ảnh/tin: 1–5 ảnh JPEG/PNG/WebP, mỗi ảnh tối đa 5 MB. Cách lưu file, kiểm tra nội dung tệp và URL ký thuộc quy ước API/lưu dữ liệu chưa chốt.
+
+Request multipart có `purpose` là LISTING (mặc định) hoặc CASE_EVIDENCE. Ảnh bằng chứng chỉ người tải lên, Admin xử lý Case hoặc Support được giao mới đọc được. Buyer/Seller của Checkout/Order được xem ảnh thuộc snapshot giao dịch liên quan.
 
 Bằng chứng vụ việc không được công khai như ảnh sản phẩm thông thường.
 
@@ -782,3 +813,18 @@ MOD-02 /orders/{orderId}/complaints: type=DELIVERY khi PAID, reason thuộc Deli
 PAY-03: cấu hình VNPAY Sandbox IPN trên Express; đối chiếu chữ ký, mã tham chiếu, số tiền và trạng thái. Job dùng QueryDr khi thiếu IPN. Mapping kết quả cụ thể được kiểm chứng khi có thông số sandbox.
 
 VNPAY IPN dùng GET với query parameters và phản hồi JSON {RspCode, Message} sau khi kiểm tra chữ ký, mã giao dịch, số tiền và trạng thái; URL phải có HTTPS. Nguồn: https://sandbox.vnpayment.vn/apis/docs/thanh-toan-pay/pay.html
+
+## Bổ sung COD — Hợp đồng 28/10/2026
+
+Request POST /checkouts bắt buộc paymentMethod=VNPAY|COD; COD không có payment attempt/QueryDr và không tự hết hạn. Hợp đồng A-09 tại [báo cáo đơn hàng](../report/backend-orders-vnpay-sandbox-master-report.md) thay điều kiện PAID trước giao/SOLD sau xác minh chỉ cho nhánh COD. D–J đã có code; K đã chạy kiểm thử tích hợp/race cục bộ.
+
+| Method/path | Quyền | Chức năng |
+| --- | --- | --- |
+| POST /orders/{orderId}/cancel | Buyer của Order COD | Hủy trước gửi/chưa thu/không hold, kiểm tra quyền SOLD trước mở bán |
+| POST /orders/{orderId}/cod-collection | Seller của Order COD | Ghi nhận thu đủ total sau khi gửi, có Idempotency-Key, không tự xác nhận nhận hàng |
+| POST /orders/{orderId}/cod-return-requests | Seller của Order COD | Yêu cầu xác nhận đã nhận lại hàng, reason bắt buộc; giữ SOLD và chuyển NEEDS_REVIEW |
+| POST /admin/orders/{orderId}/cod-return-decisions | Admin | ACCEPT_RETURN/REJECT_RETURN có lý do; chỉ giải phóng khi hàng đủ/đã về/chưa thu và không xung đột |
+| GET /admin/cod-collections | Admin | Lịch sử xác nhận thu COD đã lọc, có audit đọc |
+| GET /admin/cod-return-requests | Admin | Danh sách yêu cầu hoàn COD và thông tin Order đã lọc, có audit đọc |
+
+GET /me/checkouts, GET /checkouts/{checkoutId}/payment, GET /me/orders?perspective=buying|selling, POST /orders/{orderId}/receipt-confirmation, PUT /orders/{orderId}/shipment và API COD đã có code theo A-09. `POST /checkouts/{checkoutId}/payment-attempts` tạo attempt VNPAY và trả URL đã ký; COD trả 409. IPN tại `/integrations/payments/vnpay/ipn` dùng settlement chung với QueryDr. Admin tra cứu tại `GET /admin/payments` và `GET /admin/payments/{attemptId}` chỉ đọc. Worker chạy bằng `npm run worker:vnpay`. DELIVERY/ITEM vẫn thuộc phạm vi khác; không cho client tự cập nhật trạng thái hoặc thời điểm thu.

@@ -10,8 +10,10 @@ function approvedVersion(listing) {
   if (
     !listing ||
     listing.reviewHold ||
+    listing.correctionRequested ||
     listing.sellerHidden ||
-    listing.adminHidden
+    listing.adminHidden ||
+    listing.paymentReviewHold
   ) {
     return null;
   }
@@ -20,13 +22,30 @@ function approvedVersion(listing) {
   return version?.status === "APPROVED" ? version : null;
 }
 
+function listingBlockReasons(listing) {
+  const reasons = [];
+  const version = listing?.versions.id(listing.approvedVersionId);
+
+  if (version?.status !== "APPROVED") reasons.push("NOT_APPROVED");
+  if (listing.reviewHold) reasons.push("REVIEW_HOLD");
+  if (listing.correctionRequested) reasons.push("CORRECTION_REQUIRED");
+  if (listing.sellerHidden) reasons.push("SELLER_HIDDEN");
+  if (listing.adminHidden) reasons.push("ADMIN_HIDDEN");
+  if (listing.paymentReviewHold) reasons.push("PAYMENT_REVIEW");
+  if (listing.saleStatus !== "AVAILABLE") reasons.push(`SALE_${listing.saleStatus}`);
+
+  return reasons;
+}
+
 function approvedVisibleListingQuery(extra = {}) {
   return {
     ...extra,
     approvedVersionId: extra.approvedVersionId ?? { $ne: null },
     reviewHold: false,
+    correctionRequested: { $ne: true },
     sellerHidden: false,
     adminHidden: false,
+    paymentReviewHold: { $ne: true },
   };
 }
 
@@ -46,7 +65,13 @@ function snapshot(listing) {
     versionId: version._id,
     sellerId: listing.ownerId,
     title: version.title,
+    category: version.category,
+    size: version.size,
+    condition: version.condition,
+    description: version.description,
+    flaws: version.flaws,
     price: version.price,
+    shipFrom: version.shipFrom,
     imageIds: version.imageIds,
   };
 }
@@ -101,6 +126,7 @@ module.exports = {
   problem,
   validId,
   approvedVersion,
+  listingBlockReasons,
   approvedVisibleListingQuery,
   snapshot,
   availableStates,

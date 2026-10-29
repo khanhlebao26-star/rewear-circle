@@ -12,6 +12,8 @@ const {
   readAddress,
 } = require("../src/domain/commerceRules");
 const { detectImage } = require("../src/domain/mediaRules");
+const { readListingReport, readCaseDecision } = require("../src/domain/moderationRules");
+const { readDiscoveryQuery } = require("../src/domain/discoveryRules");
 const { success, failure } = require("../src/http/responses");
 
 const imageId = new mongoose.Types.ObjectId().toString();
@@ -59,8 +61,10 @@ test("listing availability requires an approved visible version", () => {
     "versions.imageIds": imageId,
     approvedVersionId: { $ne: null },
     reviewHold: false,
+    correctionRequested: { $ne: true },
     sellerHidden: false,
     adminHidden: false,
+    paymentReviewHold: { $ne: true },
   });
   assert.equal(
     approvedVisibleListingQuery({ approvedVersionId: version._id }).approvedVersionId,
@@ -137,4 +141,70 @@ test("API response helpers keep one envelope and allow endpoint metadata", () =>
     error: { code: "NOT_FOUND", message: "Không tìm thấy.", retryable: false },
     meta: { requestId: "request-1" },
   });
+});
+
+test("listing reports validate reasons, evidence IDs, and reject client-supplied identity", () => {
+  const listingId = new mongoose.Types.ObjectId().toString();
+  const evidenceId = new mongoose.Types.ObjectId().toString();
+
+  assert.deepEqual(readListingReport({
+    listingId,
+    reasonCode: "OTHER",
+    details: "  Nội dung cần kiểm tra. ",
+    evidenceMediaIds: [evidenceId],
+  }), {
+    listingId,
+    reasonCode: "OTHER",
+    details: "Nội dung cần kiểm tra.",
+    evidenceMediaIds: [evidenceId],
+  });
+  assert.equal(readListingReport({ listingId, reasonCode: "OTHER" }), null);
+  assert.equal(readListingReport({ listingId, reasonCode: "SUSPECTED_SCAM", reporterId: "forged" }), null);
+  assert.equal(readListingReport({
+    listingId,
+    reasonCode: "SUSPECTED_SCAM",
+    evidenceMediaIds: [evidenceId, evidenceId],
+  }), null);
+});
+
+test("case decisions enforce status, summary, and compatible listing actions", () => {
+  assert.deepEqual(readCaseDecision({ status: "IN_REVIEW" }), { status: "IN_REVIEW" });
+  assert.equal(readCaseDecision({ status: "IN_REVIEW", internalNote: "extra" }), null);
+  assert.deepEqual(readCaseDecision({
+    status: "CLOSED",
+    outcomeCode: "CORRECTION_REQUIRED",
+    outcomeSummary: "Đã yêu cầu Seller sửa ảnh.",
+  }), {
+    status: "CLOSED",
+    outcomeCode: "CORRECTION_REQUIRED",
+    outcomeSummary: "Đã yêu cầu Seller sửa ảnh.",
+    internalNote: "",
+    listingAction: undefined,
+  });
+  assert.equal(readCaseDecision({ status: "CLOSED", outcomeCode: "OTHER" }), null);
+  assert.equal(readCaseDecision({
+    status: "CLOSED",
+    outcomeCode: "CORRECTION_REQUIRED",
+    outcomeSummary: "Đã xử lý.",
+    listingAction: "SHOW",
+  }), null);
+});
+
+test("discovery filters validate paging and escape literal search text", () => {
+  const query = readDiscoveryQuery({
+    q: "áo.*",
+    category: "Áo",
+    size: "M",
+    minPrice: "20000",
+    maxPrice: "500000",
+    page: "2",
+    limit: "10",
+  });
+
+  assert.equal(query.page, 2);
+  assert.equal(query.limit, 10);
+  assert.deepEqual(query.filters["approvedVersion.price"], { $gte: 20000, $lte: 500000 });
+  assert.equal(query.filters.$or[0]["approvedVersion.title"].$regex, "áo\\.\\*");
+  assert.equal(readDiscoveryQuery({ minPrice: "500000", maxPrice: "20000" }), null);
+  assert.equal(readDiscoveryQuery({ page: "1", unknown: "x" }), null);
 });

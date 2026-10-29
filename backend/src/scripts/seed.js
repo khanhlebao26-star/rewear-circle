@@ -6,7 +6,19 @@ const path = require("node:path");
 const User = require("../models/User");
 const Listing = require("../models/Listing");
 const Media = require("../models/Media");
-const { Cart, Checkout, Order } = require("../models/commerce");
+const Report = require("../models/Report");
+const Case = require("../models/Case");
+const AuditEvent = require("../models/AuditEvent");
+const Notification = require("../models/Notification");
+const {
+  Cart,
+  Checkout,
+  Order,
+  PaymentAttempt,
+  PaymentEvent,
+  CodCollection,
+  CodReturnRequest,
+} = require("../models/commerce");
 
 function id(group, number) {
   return new mongoose.Types.ObjectId(group + String(number).padStart(23, "0"));
@@ -20,7 +32,22 @@ async function main() {
   await mongoose.connect(process.env.MONGODB_URI);
 
   await Promise.all(
-    [User, Listing, Media, Cart, Checkout, Order].map((Model) => Model.init()),
+    [
+      User,
+      Listing,
+      Media,
+      Report,
+      Case,
+      AuditEvent,
+      Notification,
+      Cart,
+      Checkout,
+      Order,
+      PaymentAttempt,
+      PaymentEvent,
+      CodCollection,
+      CodReturnRequest,
+    ].map((Model) => Model.init()),
   );
 
   const password = "RewearDemo123!";
@@ -47,7 +74,7 @@ async function main() {
           emailVerifiedAt: new Date(),
         },
       },
-      { upsert: true, new: true, runValidators: true },
+      { upsert: true, returnDocument: "after", runValidators: true },
     );
   }
 

@@ -6,7 +6,11 @@ const fs = require("node:fs/promises");
 const { randomUUID } = require("node:crypto");
 const Media = require("../models/Media");
 const Listing = require("../models/Listing");
+const Report = require("../models/Report");
+const Case = require("../models/Case");
+const AuditEvent = require("../models/AuditEvent");
 const User = require("../models/User");
+const { Order } = require("../models/commerce");
 const { approvedVersion, approvedVisibleListingQuery } = require("../domain/commerceRules");
 const { detectImage } = require("../domain/mediaRules");
 const {
@@ -40,8 +44,12 @@ router.post(
   async (req, res, next) => {
     const writtenFiles = [];
     const createdIds = [];
+    const purpose = req.body?.purpose || "LISTING";
 
     try {
+      if (!["LISTING", "CASE_EVIDENCE"].includes(purpose)) {
+        return fail(req, res, 422, "VALIDATION_ERROR", "purpose không hợp lệ.");
+      }
       if (!req.files?.length) {
         return fail(req, res, 422, "VALIDATION_ERROR", "Cần ít nhất một ảnh.");
       }
@@ -79,11 +87,13 @@ router.post(
           filename,
           mimeType: detected.mimeType,
           size: file.size,
+          purpose,
         });
         createdIds.push(media._id);
 
         data.push({
           mediaId: String(media._id),
+          purpose: media.purpose,
           url: `/api/v1/media/${media._id}`,
         });
       }
@@ -116,11 +126,56 @@ router.get("/media/:id", async (req, res) => {
   const user = req.session.userId
     ? await User.findById(req.session.userId)
     : null;
-  let allowed =
-    user &&
-    (String(media.ownerId) === String(user._id) || user.role === "ADMIN");
+  let allowed = user && String(media.ownerId) === String(user._id);
+  let evidenceCase = null;
 
-  if (!allowed) {
+  if (!allowed && user && media.purpose === "LISTING") {
+    allowed = Boolean(await Order.exists({
+      $or: [{ buyerId: user._id }, { sellerId: user._id }],
+      "items.imageIds": media._id,
+    }));
+  }
+
+  if (!allowed && media.purpose === "CASE_EVIDENCE" && user) {
+    const reports = await Report.find({ evidenceMediaIds: media._id }).select("caseId");
+    const caseIds = reports.map((report) => report.caseId);
+    const caseFilter = user.role === "SUPPORT" ? { assignedSupportId: user._id } : {};
+    evidenceCase = await Case.findOne({
+      ...caseFilter,
+      $or: [
+        { _id: { $in: caseIds } },
+        { evidenceMediaIds: media._id },
+      ],
+    }).select("_id assignedSupportId");
+
+    allowed = Boolean(
+      evidenceCase &&
+        (user.role === "ADMIN" ||
+          (user.role === "SUPPORT" &&
+            String(evidenceCase.assignedSupportId) === String(user._id))),
+    );
+
+    if (allowed) {
+      await AuditEvent.create({
+        actorId: user._id,
+        action: "CASE_EVIDENCE_READ",
+        targetType: "MEDIA",
+        targetId: media._id,
+        caseId: evidenceCase._id,
+        requestId: req.requestId,
+      });
+    }
+  }
+
+  if (
+    !allowed &&
+    user?.role === "ADMIN" &&
+    media.purpose === "LISTING"
+  ) {
+    allowed = Boolean(await Listing.exists({ "versions.imageIds": media._id }));
+  }
+
+  if (!allowed && media.purpose === "LISTING") {
     const listings = await Listing.find(
       approvedVisibleListingQuery({ "versions.imageIds": media._id }),
     );

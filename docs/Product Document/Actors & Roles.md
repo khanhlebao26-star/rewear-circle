@@ -73,7 +73,9 @@ Người mua là sinh viên và người bán là sinh viên đại diện cho h
 | Báo tin trước mua | Không | Có | Có | Không theo vai trò | Không theo vai trò |
 | Duyệt tin, xử lý báo cáo | Không | Không | Không | Có | Không |
 | Xem dữ liệu vụ được giao | Không | Không | Không | Theo vụ xử lý | Có |
-| Đánh dấu Đã thanh toán thủ công | Không | Không | Không | Không | Không |
+| Tự gán VNPAY đã thanh toán | Không | Không | Không | Không | Không |
+| Khai báo đã thu tiền COD theo đơn | Không | Không | Chỉ Seller của đơn, sau gửi và đủ điều kiện | Không thay Seller | Không |
+| Quyết định nhận lại hàng COD hoàn | Không | Không | Gửi yêu cầu | Có, có lý do/audit và đủ điều kiện | Không mặc định |
 
 ## **4. Nguyên tắc phân công vai trò**
 
