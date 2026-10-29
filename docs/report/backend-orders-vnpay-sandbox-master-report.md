@@ -1,7 +1,7 @@
 # Báo cáo tổng — Backend đơn hàng, VNPAY Sandbox và COD
 
 **Ngày cập nhật:** 29/10/2026  
-**Trạng thái:** Merchant Sandbox đã cấp thông tin và cấu hình local được bật. Backend từ worktree `w2-be` đang chạy cổng 4000; tunnel công khai trả trang Return đúng và worker đã kết nối MongoDB. IPN URL trong SIT chưa được xác nhận và chưa có giao dịch Sandbox thật. C có schema/index definitions nhưng migration DB cũ chưa chạy. D–J đã có code; K đạt trên MongoDB replica set tạm. L (giao dịch thật) và M (bàn giao đầy đủ) còn mở.
+**Trạng thái:** Merchant Sandbox đã cấp thông tin; IPN URL đã được lưu thành công trong SIT theo ảnh người dùng. Backend từ worktree `w2-be` chạy cổng 4000; tunnel công khai trả trang Return đúng và worker đã kết nối MongoDB. Checkout demo nhiều Seller đã có payment attempt `PENDING`, nhưng chưa có IPN hoặc giao dịch hoàn tất. C có schema/index definitions nhưng migration DB cũ chưa chạy. D–J đã có code; K đạt trên MongoDB replica set tạm. L (nghiệm thu giao dịch) và M (bàn giao đầy đủ) còn mở.
 **Phạm vi đợt cập nhật:** Hoàn thiện Return URL và fail-fast validation cho cấu hình VNPAY, cập nhật hướng dẫn môi trường; không kết nối DB dự án để migration và chưa thể chạy giao dịch Sandbox thật trong phiên này.
 
 ## 1. Mục đích và cách cập nhật
@@ -348,7 +348,7 @@ Chưa kết nối DB hoặc xem `.env`; chưa biết số lượng/độ nhất 
 | Bước | Trạng thái | Kết quả hoặc điều kiện cần cập nhật |
 | --- | --- | --- |
 | A — Hợp đồng, trạng thái, ma trận thanh toán | Hoàn tất về tài liệu, đã bổ sung COD | API hai phương thức, collection/return COD, snapshot, quyền, idempotency, VNPAY lịch/hold/ACK; xác nhận cổng còn B/L |
-| B — Môi trường và giao thức Sandbox | Cấu hình local hợp lệ; SIT/IPN còn chờ xác nhận | Tunnel và Return URL công khai hoạt động với backend `w2-be`; worker kết nối MongoDB. Chưa xác minh IPN URL đã lưu ở SIT |
+| B — Môi trường và giao thức Sandbox | Cấu hình local và SIT đã xác nhận | Ảnh SIT báo cập nhật thành công; IPN URL khớp `.env`. Tunnel, Return URL và worker hoạt động |
 | C — Model, index, dữ liệu cũ | Schema/index definitions và kế hoạch migration hoàn tất; DB migration chờ backup/dry-run | Models Payment/COD, snapshot, lease, ownership/audit và index đã khai báo; chưa xác minh index trên MongoDB hoặc backfill dữ liệu cũ |
 | D — Checkout/Order theo phương thức | Đã triển khai; kiểm thử tích hợp đạt trong K | POST /checkouts rẽ nhánh COD/VNPAY trong transaction; idempotency fingerprint, kiểm giá/version, snapshot, cập nhật có điều kiện và dọn giỏ |
 | E — Đơn mua/bán, COD và hủy | Đã triển khai; kiểm thử tích hợp đạt trong K | Lịch sử/DTO có quyền, hủy VNPAY trước attempt, COD hủy/thu/hoàn, Admin tra cứu, shipment/receipt tối thiểu, cập nhật media theo Order |
@@ -358,7 +358,7 @@ Chưa kết nối DB hoặc xem `.env`; chưa biết số lượng/độ nhất 
 | I — Muộn/xung đột | Đã triển khai; có kiểm thử tích hợp | Thành công đến muộn giữ SUCCESS tài chính; xung đột một hoặc hai Buyer khóa quyền nhận, không ghi đè Listing hoặc tự hoàn tiền |
 | J — Điều tra, quyền và log | Đã triển khai; có kiểm thử tích hợp | GET Admin lọc/chi tiết chỉ đọc, audit lần tra cứu, không trả payment URL/địa chỉ hoặc payload thô |
 | K — Kiểm thử tự động | Đạt trên MongoDB replica set dành riêng cho test | Domain 8/8, protocol 4/4, commerce/COD/VNPAY 1/1, moderation regression 1/1; QueryDr dùng response giả lập có checksum, chưa gọi Sandbox thật |
-| L — Sandbox thật | Chưa nghiệm thu; đang chờ xác nhận SIT và giao dịch thật | Backend, tunnel, Return URL và worker hoạt động; cần xác nhận IPN URL trong SIT và hoàn tất các ca thanh toán thật |
+| L — Sandbox thật | Đang chờ hoàn tất giao dịch đầu tiên | IPN URL trong SIT đã lưu; payment attempt demo còn PENDING và trang VNPAY đang chờ người dùng chọn thẻ/nhập OTP. Chưa có IPN/QueryDr thật |
 | M — Bàn giao | Chưa thực hiện | Docs, seed, mẫu request, worker và bằng chứng nghiệm thu |
 
 Các lần cập nhật sau giữ lịch sử quyết định quan trọng tại đây; nếu thay hợp đồng A phải ghi lý do, ảnh hưởng code/API/test và ngày quyết định mới.
@@ -469,3 +469,10 @@ Tích hợp cover attempt/idempotency, nhiều Seller, snapshot/địa chỉ b�
 - Giữ nguyên Cloudflare Quick Tunnel hiện có. Truy cập URL Return công khai trả trang “Đã quay lại từ VNPAY”; route không cập nhật trạng thái thanh toán.
 - Khởi động `npm run worker:vnpay` từ worktree `w2-be`. Kết nối MongoDB read-only được xác minh `ready`; worker chạy vòng đối soát định kỳ và không in log khi không có việc đến hạn.
 - Không ghi nhận giao dịch Sandbox, IPN thật hoặc QueryDr thật trong bước này. Bước L còn mở đến khi IPN URL được lưu trong SIT và chạy đủ các ca giao dịch ở mục 12.
+
+## 18. Xác nhận IPN SIT và chuẩn bị giao dịch Sandbox đầu tiên (29/10/2026)
+
+- Ảnh người dùng cho thấy mục “Cấu hình IPN URL” báo “Cập nhật thành công”; URL đã lưu khớp cấu hình IPN của backend.
+- Mục “DS GD đã test” trong SIT đang trống. Kiểm tra MongoDB cho Checkout demo nhiều Seller cho thấy `PENDING_PAYMENT`, payment attempt `PENDING`, chưa có `PaymentEvent` IPN/QUERY; vì vậy cổng chưa nhận được thanh toán hoàn tất.
+- Payment attempt đã được mở lại trên trang “Chọn phương thức thanh toán (Test)” của VNPAY, hạn đến `2026-10-29 16:51:57 +07:00`. Return URL là trang hiển thị cho Buyer; trạng thái thanh toán chỉ được xác minh từ IPN/QueryDr.
+- Chờ người dùng chọn NCB, nhập thẻ/OTP test và xác nhận trên trang VNPAY. Sau khi quay lại, cần kiểm tra Checkout/Orders, PaymentAttempt, PaymentEvent và danh sách giao dịch SIT để lưu bằng chứng.
