@@ -2,7 +2,7 @@
 
 **Ngày cập nhật:** 31/10/2026
 
-**Trạng thái:** MongoDB Docker `rewear-circle-src-mongo-1` đang chạy trên replica set `rs0`; API/worker và Quick Tunnel hiện hoạt động. Return public trả HTTP 200; IPN URL mới đã cập nhật trong `.env`, nhưng SIT chưa được cập nhật và chưa có IPN Sandbox thật. Checkout `6ae313b98c624fe7d9d7a968` hiện vẫn NEEDS_REVIEW; không có IPN event, QueryDr persisted data không xác minh được kết quả tài chính, hai Listing tiếp tục RESERVED/hold. Backup và dry-run audit đã hoàn tất; toàn bộ index khai báo hiện có. Không có Listing AVAILABLE hợp lệ để tạo Checkout mới. Integration suite đầy đủ đạt sau khi sửa assertion race trong test. L (Sandbox thật) và M (bàn giao đầy đủ) còn mở.
+**Trạng thái:** MongoDB Docker `rewear-circle-src-mongo-1` đang chạy trên replica set `rs0`; API/worker và Quick Tunnel hiện hoạt động. Return public trả HTTP 200; IPN URL mới đã cập nhật trong `.env` và người dùng xác nhận đã lưu tại SIT. Ảnh SIT cho thấy danh sách giao dịch đã test và danh sách giao dịch đang trống; trang tra cứu trả 403. Checkout `6ae313b98c624fe7d9d7a968` hiện vẫn NEEDS_REVIEW; không có IPN event, QueryDr persisted data không xác minh được kết quả tài chính, hai Listing tiếp tục RESERVED/hold. Backup và dry-run audit đã hoàn tất; toàn bộ index khai báo hiện có. Không có Listing AVAILABLE hợp lệ để tạo Checkout mới. Integration suite đầy đủ đạt sau khi sửa assertion race trong test. L (Sandbox thật) và M (bàn giao đầy đủ) còn mở.
 
 **Phạm vi đợt cập nhật:** Xác minh Docker/MongoDB, backup/audit dữ liệu và index, khởi động backend/worker/tunnel, kiểm tra public Return và nghiệm thu test; không sửa trạng thái giao dịch hoặc mở lại Listing.
 
@@ -354,7 +354,7 @@ Nguồn: [PAY và IPN](https://sandbox.vnpayment.vn/apis/docs/thanh-toan-pay/pay
 | Bước | Trạng thái | Kết quả hoặc điều kiện cần cập nhật |
 | --- | --- | --- |
 | A — Hợp đồng, trạng thái, ma trận thanh toán | Hoàn tất về tài liệu, đã bổ sung COD | API hai phương thức, collection/return COD, snapshot, quyền, idempotency, VNPAY lịch/hold/ACK; xác nhận cổng còn B/L |
-| B — Môi trường và giao thức Sandbox | Local runtime/public Return đã xác minh; chờ cập nhật IPN trong SIT | MongoDB `rs0`, API, worker, tunnel hoạt động; Return 200; IPN URL mới trong `.env`, SIT chưa xác minh/lưu lại |
+| B — Môi trường và giao thức Sandbox | Local runtime/public Return đã xác minh; IPN URL được người dùng xác nhận đã lưu | MongoDB `rs0`, API, worker, tunnel hoạt động; Return 200; SIT chưa ghi nhận giao dịch thử và trang tra cứu trả 403 |
 | C — Model, index, dữ liệu cũ | Nghiệm thu backup, dry-run và index; không cần backfill với bản ghi đủ điều kiện | Archive dry-run đọc được; COD legacy nhất quán; VNPAY NEEDS_REVIEW và Listing exception giữ nguyên; 13 model không thiếu index |
 | D — Checkout/Order theo phương thức | Đã triển khai; kiểm thử tích hợp đạt trong K | POST /checkouts rẽ nhánh COD/VNPAY trong transaction; idempotency fingerprint, kiểm giá/version, snapshot, cập nhật có điều kiện và dọn giỏ |
 | E — Đơn mua/bán, COD và hủy | Đã triển khai; kiểm thử tích hợp đạt trong K | Lịch sử/DTO có quyền, hủy VNPAY trước attempt, COD hủy/thu/hoàn, Admin tra cứu, shipment/receipt tối thiểu, cập nhật media theo Order |
@@ -364,7 +364,7 @@ Nguồn: [PAY và IPN](https://sandbox.vnpayment.vn/apis/docs/thanh-toan-pay/pay
 | I — Muộn/xung đột | Đã triển khai; có kiểm thử tích hợp | Thành công đến muộn giữ SUCCESS tài chính; xung đột một hoặc hai Buyer khóa quyền nhận, không ghi đè Listing hoặc tự hoàn tiền |
 | J — Điều tra, quyền và log | Đã triển khai; có kiểm thử tích hợp | GET Admin lọc/chi tiết chỉ đọc, audit lần tra cứu, không trả payment URL/địa chỉ hoặc payload thô |
 | K — Kiểm thử tự động | Đạt trên MongoDB replica set dành riêng cho test | Domain 8/8, protocol 5/5, commerce/COD/VNPAY 1/1, moderation regression 1/1; QueryDr dùng response giả lập có checksum, chưa gọi Sandbox thật |
-| L — Sandbox thật | Còn mở | Cần cập nhật IPN URL mới tại SIT, có Listing AVAILABLE được duyệt, tạo Checkout/attempt mới và xác minh thành công + thất bại/hủy + callback/QueryDr thật |
+| L — Sandbox thật | Còn mở | IPN URL mới được người dùng xác nhận đã lưu; cần Listing AVAILABLE được duyệt, Checkout/attempt mới và xác minh thành công + thất bại/hủy + callback/QueryDr thật |
 | M — Bàn giao | Chưa thực hiện | Docs, seed, mẫu request, worker và bằng chứng nghiệm thu |
 
 Các lần cập nhật sau giữ lịch sử quyết định quan trọng tại đây; nếu thay hợp đồng A phải ghi lý do, ảnh hưởng code/API/test và ngày quyết định mới.
@@ -497,5 +497,12 @@ Tích hợp cover attempt/idempotency, nhiều Seller, snapshot/địa chỉ b�
 - Backup logic `/tmp/rewear-circle-2026-10-31.archive` (30 KB) tạo trước mọi ghi DB; `mongorestore --dryRun` hoàn tất. SHA-256 `e7b12806f293bc8fe634f955a154a4bcd6aa1e2c44a3ac93ee8e6a840c2e6d78`. Không có migration hoặc cập nhật DB trong lần này.
 - So sánh schema/index cho 13 model: không thiếu index và không lệch unique/sparse/partial options.
 - `npm test` trên database test riêng `rewear_circle_codex_20261031_5321_test`: 15/15 test đạt, gồm 8 domain, 5 protocol, 1 commerce integration, 1 moderation integration. Assertion race được chỉnh để cho phép một request đồng thời tạo (201) và request kia replay (200), bất kể thứ tự hoàn tất. Đây là kiểm thử mô phỏng, không phải giao dịch Sandbox thật.
-- API trên cổng 4000 trả `/health/ready` `ready`; worker VNPAY và Quick Tunnel đang chạy. Tunnel mới `https://sale-farms-contrast-much.trycloudflare.com`; `/health/ready` trả `ready`, Return trả HTTP 200 đúng nội dung. OPTIONS tới IPN trả HTTP 200/Allow GET,HEAD mà không phát sinh PaymentEvent. IPN URL trong `.env` là `https://sale-farms-contrast-much.trycloudflare.com/api/v1/integrations/payments/vnpay/ipn`; SIT chưa được xác minh hoặc cập nhật.
-- **L còn mở:** cần người có quyền đăng nhập VNPAYGW SIT và lưu IPN URL mới. Cũng chưa thể tạo Checkout mới vì hiện không có Listing AVAILABLE hợp lệ; hai món APPROVED đang RESERVED/hold, một món PENDING và hai món SOLD (một món thiếu `soldCheckoutId`). Cần Admin duyệt Listing mới qua luồng nghiệp vụ; hiện DB có 4 User đã xác minh, không có tài khoản ADMIN. Sau khi SIT được cập nhật và có Listing được duyệt/Buyer session hợp lệ, tiếp tục tạo PAY URL rồi giao người dùng thao tác thẻ/OTP trên Sandbox. M còn mở cho đến khi đối chiếu được giao dịch Sandbox thật và đủ các ca L.
+- API trên cổng 4000 trả `/health/ready` `ready`; worker VNPAY và Quick Tunnel đang chạy. Tunnel mới `https://sale-farms-contrast-much.trycloudflare.com`; `/health/ready` trả `ready`, Return trả HTTP 200 đúng nội dung. OPTIONS tới IPN trả HTTP 200/Allow GET,HEAD mà không phát sinh PaymentEvent. IPN URL trong `.env` là `https://sale-farms-contrast-much.trycloudflare.com/api/v1/integrations/payments/vnpay/ipn`; người dùng xác nhận đã lưu URL này tại SIT, nhưng chưa có IPN thật.
+- **L còn mở:** người dùng xác nhận IPN URL mới đã lưu, nhưng SIT chưa hiển thị giao dịch và trang tra cứu trả 403. Cũng chưa thể tạo Checkout mới vì hiện không có Listing AVAILABLE hợp lệ; hai món APPROVED đang RESERVED/hold, một món PENDING và hai món SOLD (một món thiếu `soldCheckoutId`). Cần Admin duyệt Listing mới qua luồng nghiệp vụ; hiện DB có 4 User đã xác minh, không có tài khoản ADMIN. Sau khi có Listing được duyệt/Buyer session hợp lệ, tiếp tục tạo PAY URL rồi giao người dùng thao tác thẻ/OTP trên Sandbox. M còn mở cho đến khi đối chiếu được giao dịch Sandbox thật và đủ các ca L.
+
+## 21. Phản hồi từ VNPAYGW SIT (31/10/2026)
+
+- Người dùng xác nhận IPN URL mới đã được cập nhật trong SIT.
+- Ảnh trang “Danh sách giao dịch đã test” và “Danh sách giao dịch” đều không có giao dịch. Trang `/order/search` hiển thị Whitelabel Error Page với HTTP 403 Forbidden.
+- Đây là trạng thái phiên/quyền tra cứu trên SIT; không phải lỗi tích hợp backend. Các ảnh không xác nhận nội dung IPN URL đã lưu, nhưng lời xác nhận của người dùng được ghi nhận. DB backend vẫn không có PaymentEvent IPN.
+- Vì SIT không hiển thị giao dịch và trang tra cứu bị cấm, chưa thể đối chiếu trạng thái giao dịch cũ bằng cổng. Không kết luận thanh toán thành công hoặc thất bại từ các trang trống/403.
