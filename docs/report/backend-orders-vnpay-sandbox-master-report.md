@@ -2,7 +2,7 @@
 
 **Ngày cập nhật:** 31/10/2026
 
-**Trạng thái:** MongoDB Docker `rewear-circle-src-mongo-1` đang chạy trên replica set `rs0`; API/worker và Quick Tunnel hiện hoạt động. Return public trả HTTP 200; IPN URL mới đã cập nhật trong `.env` và người dùng xác nhận đã lưu tại SIT. Ảnh SIT cho thấy danh sách giao dịch đã test và danh sách giao dịch đang trống; trang tra cứu trả 403. Checkout `6ae313b98c624fe7d9d7a968` hiện vẫn NEEDS_REVIEW; không có IPN event, QueryDr persisted data không xác minh được kết quả tài chính, hai Listing tiếp tục RESERVED/hold. Backup và dry-run audit đã hoàn tất; toàn bộ index khai báo hiện có. Không có Listing AVAILABLE hợp lệ để tạo Checkout mới. Integration suite đầy đủ đạt sau khi sửa assertion race trong test. L (Sandbox thật) và M (bàn giao đầy đủ) còn mở.
+**Trạng thái:** MongoDB Docker `rewear-circle-src-mongo-1` đang chạy trên replica set `rs0`; API/worker và Quick Tunnel hiện hoạt động. Return public trả HTTP 200; IPN URL mới đã cập nhật trong `.env` và người dùng xác nhận đã lưu tại SIT. Merchant View tra merchant reference cũ không có kết quả. Một QueryDr chỉ đọc mới nhất trả HTTP 200, mã 99/“Unexpected error” nhưng không có chữ ký hoặc trường giao dịch để xác minh; không coi đây là kết quả thanh toán và không cập nhật DB. Checkout `6ae313b98c624fe7d9d7a968` hiện vẫn NEEDS_REVIEW, không có IPN event, hai Listing tiếp tục RESERVED/hold. Backup và dry-run audit đã hoàn tất; toàn bộ index khai báo hiện có. Không có Listing AVAILABLE hợp lệ để tạo Checkout mới. Integration suite đầy đủ đạt sau khi sửa assertion race trong test. L (Sandbox thật) và M (bàn giao đầy đủ) còn mở.
 
 **Phạm vi đợt cập nhật:** Xác minh Docker/MongoDB, backup/audit dữ liệu và index, khởi động backend/worker/tunnel, kiểm tra public Return và nghiệm thu test; không sửa trạng thái giao dịch hoặc mở lại Listing.
 
@@ -492,6 +492,7 @@ Tích hợp cover attempt/idempotency, nhiều Seller, snapshot/địa chỉ b�
 - Docker xác nhận container MongoDB `rewear-circle-src-mongo-1` đang Up và publish `0.0.0.0:27017->27017`. Kết nối URI hiện hành tới `rewear_circle` thành công trên replica set `rs0`, writable primary.
 - Checkout `6ae313b98c624fe7d9d7a968`: NEEDS_REVIEW, tổng 350.000 VND. PaymentAttempt duy nhất NEEDS_REVIEW, merchant reference `RC20261029015b085d983a44c8026b572a`, cùng số tiền, không có provider transaction number; checkpoint cuối là NEEDS_REVIEW.
 - Hai PaymentEvent đã lưu đều từ QUERY: một REJECTED/INVALID_QUERY_SIGNATURE; một NEEDS_REVIEW/QUERYDR_UNRESOLVED_AFTER_FINAL_CHECKPOINT. Không có PaymentEvent IPN. DB hiện tại không có bằng chứng xác nhận VNPAY đã nhận tiền hoặc giao dịch đã thất bại; không đổi trạng thái.
+- Một QueryDr chỉ đọc bổ sung ngày 31/10/2026 trả HTTP 200, `vnp_ResponseCode=99`, `vnp_Message=Unexpected error`. Response không có chữ ký hợp lệ hoặc các trường TmnCode/reference/amount/transaction number cần đối chiếu. VNPAY định nghĩa mã 99 là lỗi khác/không xác định; response này không chứng minh thanh toán thành công hoặc thất bại. Không ghi event hoặc thay đổi DB từ lần gọi này.
 - Hai Order (150.000 và 200.000 VND) đều NEEDS_REVIEW/hold; hai Listing tương ứng RESERVED bởi Checkout này và paymentReviewHold=true. Không giải phóng, không tạo giao dịch đè lên.
 - Dry-run trên toàn DB phân loại Checkout COD legacy `6ae1742121ee6baefb2cb510`: Checkout/Order đã CONFIRMED, COD UNPAID, tổng/địa chỉ/snapshot/ownership khớp; Listing SOLD đúng Checkout. Bản ghi không cần cập nhật. Listing `200000000000000000000005` đang SOLD nhưng không có `soldCheckoutId`; không tự gán chủ. Một Listing PENDING, hai SOLD; hiện có 0 Listing AVAILABLE hợp lệ.
 - Backup logic `/tmp/rewear-circle-2026-10-31.archive` (30 KB) tạo trước mọi ghi DB; `mongorestore --dryRun` hoàn tất. SHA-256 `e7b12806f293bc8fe634f955a154a4bcd6aa1e2c44a3ac93ee8e6a840c2e6d78`. Không có migration hoặc cập nhật DB trong lần này.
@@ -513,3 +514,9 @@ Tích hợp cover attempt/idempotency, nhiều Seller, snapshot/địa chỉ b�
 - Đây là luồng Merchant View riêng với trang SIT Testing `/vnpaygw-sit-testing`; sau khi người dùng đăng nhập, trang “Tìm kiếm thanh toán” hoạt động.
 - Tra cứu theo số hóa đơn/merchant reference `RC20261029015b085d983a44c8026b572a`, khoảng 28–31/10/2026, trả “Không có kết quả phù hợp”. Không thấy giao dịch theo reference trong Merchant View của tài khoản hiện tại.
 - Kết quả trống không chứng minh giao dịch đã thất bại hoặc tiền chưa chuyển; PaymentAttempt vẫn NEEDS_REVIEW do không có IPN hợp lệ/QueryDr xác minh. Không thay đổi trạng thái Checkout/Listing.
+
+## 23. Rollback và xử lý NEEDS_REVIEW
+
+- MongoDB transaction chỉ rollback các cập nhật cục bộ nếu thao tác trong ReWear thất bại trước khi commit. Sau khi attempt đã commit và yêu cầu được gửi sang VNPAY, rollback DB không hủy hoặc hoàn tiền ở VNPAY.
+- Settlement chỉ chuyển trạng thái và giải phóng Listing khi có IPN/QueryDr đã xác minh. Khi provider không trả kết quả đáng tin cậy, hệ thống giữ hold để tránh bán món đang có thể đã được thanh toán.
+- Admin payments hiện chỉ có API đọc; chưa có thao tác/audit workflow để giải quyết NEEDS_REVIEW dựa trên xác nhận ngoài băng. Đây là khoảng trống vận hành khiến record cần chờ người kiểm tra; không sửa trực tiếp DB hoặc tự coi mã 99/trang trống là FAILED.
