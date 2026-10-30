@@ -510,5 +510,6 @@ Tích hợp cover attempt/idempotency, nhiều Seller, snapshot/địa chỉ b�
 ## 22. Kiểm tra trang Merchant View tra cứu giao dịch (31/10/2026)
 
 - Mở `https://sandbox.vnpayment.vn/merchantv2/Transaction/PaymentSearch.htm` chuyển tới trang đăng nhập `/merchantv2/Users/Login.htm` với `ReturnUrl=/merchantv2/Transaction/PaymentSearch.htm`.
-- Đây là luồng đăng nhập Merchant View riêng với trang SIT Testing `/vnpaygw-sit-testing`; đường dẫn đích là chức năng tra cứu giao dịch. Chưa xác nhận tài khoản nào có quyền, vì chưa đăng nhập và không nhập thông tin xác thực.
-- Sau khi người dùng đăng nhập trực tiếp bằng tài khoản Merchant View, có thể tra merchant reference cũ tại trang này. Kết quả tra cứu chưa được xem; trạng thái Checkout tiếp tục NEEDS_REVIEW.
+- Đây là luồng Merchant View riêng với trang SIT Testing `/vnpaygw-sit-testing`; sau khi người dùng đăng nhập, trang “Tìm kiếm thanh toán” hoạt động.
+- Tra cứu theo số hóa đơn/merchant reference `RC20261029015b085d983a44c8026b572a`, khoảng 28–31/10/2026, trả “Không có kết quả phù hợp”. Không thấy giao dịch theo reference trong Merchant View của tài khoản hiện tại.
+- Kết quả trống không chứng minh giao dịch đã thất bại hoặc tiền chưa chuyển; PaymentAttempt vẫn NEEDS_REVIEW do không có IPN hợp lệ/QueryDr xác minh. Không thay đổi trạng thái Checkout/Listing.
