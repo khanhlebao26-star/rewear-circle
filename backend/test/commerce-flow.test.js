@@ -172,18 +172,22 @@ test("checkout, VNPAY attempt/IPN, review holds, admin reads, and COD isolation"
       createAttempt(checkoutId, "attempt-key-0001"),
       createAttempt(checkoutId, "attempt-key-0001"),
     ]);
-    assert.equal(attemptResult.response.status, 201);
-    assert.equal(concurrentAttempt.response.status, 200);
-    assert.equal(attemptResult.data.data.status, "PENDING");
-    assert.equal(attemptResult.data.data.canRedirect, true);
-    assert.equal(concurrentAttempt.data.data.attemptId, attemptResult.data.data.attemptId);
-    const paymentUrl = new URL(attemptResult.data.data.paymentUrl);
+    assert.deepEqual(
+      [attemptResult.response.status, concurrentAttempt.response.status].sort(),
+      [200, 201],
+    );
+    const createdAttempt = attemptResult.response.status === 201 ? attemptResult : concurrentAttempt;
+    const replayedAttempt = attemptResult.response.status === 200 ? attemptResult : concurrentAttempt;
+    assert.equal(createdAttempt.data.data.status, "PENDING");
+    assert.equal(createdAttempt.data.data.canRedirect, true);
+    assert.equal(replayedAttempt.data.data.attemptId, createdAttempt.data.data.attemptId);
+    const paymentUrl = new URL(createdAttempt.data.data.paymentUrl);
     const paymentFields = Object.fromEntries(paymentUrl.searchParams.entries());
     assert.equal(verifyQuery(paymentFields, process.env.VNPAY_HASH_SECRET), true);
     assert.equal(paymentFields.vnp_Amount, "20500000");
     const replayAttempt = await createAttempt(checkoutId, "attempt-key-0001");
     assert.equal(replayAttempt.response.status, 200);
-    assert.equal(replayAttempt.data.data.paymentUrl, attemptResult.data.data.paymentUrl);
+    assert.equal(replayAttempt.data.data.paymentUrl, createdAttempt.data.data.paymentUrl);
     assert.equal((await createAttempt(checkoutId, "attempt-key-0002")).response.status, 409);
     const returnedPayment = await request(`/checkouts/${checkoutId}/payment?vnp_ResponseCode=00`, { user: buyer });
     assert.equal(returnedPayment.data.data.status, "PENDING");

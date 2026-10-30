@@ -2,9 +2,9 @@
 
 **Ngày cập nhật:** 31/10/2026
 
-**Trạng thái:** Merchant Sandbox đã cấp thông tin; IPN URL từng được xác nhận lưu thành công theo ảnh trước đó, nhưng chưa xác minh lại trên SIT. Trong lần kiểm tra hiện tại, API, worker và tunnel không chạy; MongoDB tại `127.0.0.1:27017` không nhận kết nối. Lần kiểm tra lịch sử ghi Checkout `6ae313b98c624fe7d9d7a968` ở NEEDS_REVIEW; trạng thái hiện tại chưa thể đọc lại, nên không suy luận thanh toán từ QueryDr mã 99 hay thay đổi hold/Listing. C có schema/index definitions nhưng chưa backup, audit dữ liệu hoặc xác minh index trên DB hiện hành. Bộ kiểm thử mô phỏng đạt phần unit/protocol; hai integration test bị bỏ qua do không có `MONGODB_TEST_URI`. L (nghiệm thu Sandbox thật) và M (bàn giao đầy đủ) còn mở.
+**Trạng thái:** MongoDB Docker `rewear-circle-src-mongo-1` đang chạy trên replica set `rs0`; API/worker và Quick Tunnel hiện hoạt động. Return public trả HTTP 200; IPN URL mới đã cập nhật trong `.env`, nhưng SIT chưa được cập nhật và chưa có IPN Sandbox thật. Checkout `6ae313b98c624fe7d9d7a968` hiện vẫn NEEDS_REVIEW; không có IPN event, QueryDr persisted data không xác minh được kết quả tài chính, hai Listing tiếp tục RESERVED/hold. Backup và dry-run audit đã hoàn tất; toàn bộ index khai báo hiện có. Không có Listing AVAILABLE hợp lệ để tạo Checkout mới. Integration suite đầy đủ đạt sau khi sửa assertion race trong test. L (Sandbox thật) và M (bàn giao đầy đủ) còn mở.
 
-**Phạm vi đợt cập nhật:** Kiểm tra trạng thái runtime, cấu hình công khai, MongoDB và bộ kiểm thử; không ghi DB, không mở lại Listing và không tạo giao dịch khi chưa xác minh được DB hiện hành.
+**Phạm vi đợt cập nhật:** Xác minh Docker/MongoDB, backup/audit dữ liệu và index, khởi động backend/worker/tunnel, kiểm tra public Return và nghiệm thu test; không sửa trạng thái giao dịch hoặc mở lại Listing.
 
 ## 1. Mục đích và cách cập nhật
 
@@ -341,17 +341,21 @@ Nguồn: [PAY và IPN](https://sandbox.vnpayment.vn/apis/docs/thanh-toan-pay/pay
 - Có thể suy ra Checkout tổng/địa chỉ từ Orders cũ chỉ khi toàn bộ snapshot nhất quán; Listing `soldCheckoutId` chỉ backfill khi quan hệ Order → Checkout → Listing là duy nhất.
 - Checkout hoàn tất nhưng thiếu Order, địa chỉ/tổng khác nhau, Listing đã thuộc luồng khác, hoặc xuất hiện PaymentAttempt cũ: dừng record đó để rà soát; không tự sửa thành PAID, không mở bán và không suy luận đã thu COD.
 
-### Phần còn chờ nghiệm thu C
+### Nghiệm thu C (31/10/2026)
 
-Chưa kết nối DB hoặc xem `.env`; chưa biết số lượng/độ nhất quán của dữ liệu cũ. Cần backup, báo cáo dry-run và duyệt các record ngoại lệ trước khi chạy backfill. Chưa cập nhật dữ liệu trong lượt này.
+- Tạo backup logic `rewear_circle` tại `/tmp/rewear-circle-2026-10-31.archive` (30 KB); `mongorestore --dryRun` đọc archive thành công. SHA-256: `e7b12806f293bc8fe634f955a154a4bcd6aa1e2c44a3ac93ee8e6a840c2e6d78`.
+- Dry-run đọc 2 Checkout, 3 Order, 1 PaymentAttempt, 2 PaymentEvent và 5 Listing. Checkout COD legacy đã ở CONFIRMED/UNPAID; Order, snapshot, tổng, địa chỉ và quyền sở hữu Listing khớp; Listing SOLD đúng Checkout. Giữ `contractVersion=1`, không cần backfill.
+- Checkout VNPAY hiện hành ở NEEDS_REVIEW có Attempt/2 Order NEEDS_REVIEW và 2 Listing RESERVED bởi chính Checkout, đều paymentReviewHold=true; đây là ngoại lệ cần giữ nguyên để điều tra, không migrate/giải phóng.
+- Một Listing SOLD không có `soldCheckoutId` khớp; giữ nguyên và cần audit nghiệp vụ riêng, không sửa tự động. Listing PENDING duy nhất chưa thể bán.
+- Đối chiếu index khai báo/hiện có trên 13 model: không thiếu hoặc lệch option. Không cần tạo index hoặc ghi DB.
 
 ## 12. Tiến độ cập nhật dần
 
 | Bước | Trạng thái | Kết quả hoặc điều kiện cần cập nhật |
 | --- | --- | --- |
 | A — Hợp đồng, trạng thái, ma trận thanh toán | Hoàn tất về tài liệu, đã bổ sung COD | API hai phương thức, collection/return COD, snapshot, quyền, idempotency, VNPAY lịch/hold/ACK; xác nhận cổng còn B/L |
-| B — Môi trường và giao thức Sandbox | Cấu hình local và SIT đã xác nhận | Ảnh SIT báo cập nhật thành công; IPN URL khớp `.env`. Tunnel, Return URL và worker hoạt động |
-| C — Model, index, dữ liệu cũ | Schema/index definitions và kế hoạch migration hoàn tất; DB migration chờ backup/dry-run | Models Payment/COD, snapshot, lease, ownership/audit và index đã khai báo; chưa xác minh index trên MongoDB hoặc backfill dữ liệu cũ |
+| B — Môi trường và giao thức Sandbox | Local runtime/public Return đã xác minh; chờ cập nhật IPN trong SIT | MongoDB `rs0`, API, worker, tunnel hoạt động; Return 200; IPN URL mới trong `.env`, SIT chưa xác minh/lưu lại |
+| C — Model, index, dữ liệu cũ | Nghiệm thu backup, dry-run và index; không cần backfill với bản ghi đủ điều kiện | Archive dry-run đọc được; COD legacy nhất quán; VNPAY NEEDS_REVIEW và Listing exception giữ nguyên; 13 model không thiếu index |
 | D — Checkout/Order theo phương thức | Đã triển khai; kiểm thử tích hợp đạt trong K | POST /checkouts rẽ nhánh COD/VNPAY trong transaction; idempotency fingerprint, kiểm giá/version, snapshot, cập nhật có điều kiện và dọn giỏ |
 | E — Đơn mua/bán, COD và hủy | Đã triển khai; kiểm thử tích hợp đạt trong K | Lịch sử/DTO có quyền, hủy VNPAY trước attempt, COD hủy/thu/hoàn, Admin tra cứu, shipment/receipt tối thiểu, cập nhật media theo Order |
 | F — Payment attempt | Đã triển khai; có kiểm thử tích hợp | Một attempt/reference mỗi Checkout, PAY URL ký, replay đúng idempotency, COD bị từ chối |
@@ -359,8 +363,8 @@ Chưa kết nối DB hoặc xem `.env`; chưa biết số lượng/độ nhất 
 | H — QueryDr/hết hạn | Đã triển khai; có kiểm thử tích hợp | Worker `worker:vnpay`, lease lưu DB, hết hạn không attempt, checkpoint 0/1/3/5, throttle tối thiểu 5 phút 10 giây; timeout/94 giữ khóa |
 | I — Muộn/xung đột | Đã triển khai; có kiểm thử tích hợp | Thành công đến muộn giữ SUCCESS tài chính; xung đột một hoặc hai Buyer khóa quyền nhận, không ghi đè Listing hoặc tự hoàn tiền |
 | J — Điều tra, quyền và log | Đã triển khai; có kiểm thử tích hợp | GET Admin lọc/chi tiết chỉ đọc, audit lần tra cứu, không trả payment URL/địa chỉ hoặc payload thô |
-| K — Kiểm thử tự động | Đạt trên MongoDB replica set dành riêng cho test | Domain 8/8, protocol 4/4, commerce/COD/VNPAY 1/1, moderation regression 1/1; QueryDr dùng response giả lập có checksum, chưa gọi Sandbox thật |
-| L — Sandbox thật | Đang chờ hoàn tất giao dịch đầu tiên | IPN URL trong SIT đã lưu; payment attempt demo còn PENDING và trang VNPAY đang chờ người dùng chọn thẻ/nhập OTP. Chưa có IPN/QueryDr thật |
+| K — Kiểm thử tự động | Đạt trên MongoDB replica set dành riêng cho test | Domain 8/8, protocol 5/5, commerce/COD/VNPAY 1/1, moderation regression 1/1; QueryDr dùng response giả lập có checksum, chưa gọi Sandbox thật |
+| L — Sandbox thật | Còn mở | Cần cập nhật IPN URL mới tại SIT, có Listing AVAILABLE được duyệt, tạo Checkout/attempt mới và xác minh thành công + thất bại/hủy + callback/QueryDr thật |
 | M — Bàn giao | Chưa thực hiện | Docs, seed, mẫu request, worker và bằng chứng nghiệm thu |
 
 Các lần cập nhật sau giữ lịch sử quyết định quan trọng tại đây; nếu thay hợp đồng A phải ghi lý do, ảnh hưởng code/API/test và ngày quyết định mới.
@@ -479,13 +483,19 @@ Tích hợp cover attempt/idempotency, nhiều Seller, snapshot/địa chỉ b�
 - Payment attempt đã được mở lại trên trang “Chọn phương thức thanh toán (Test)” của VNPAY, hạn đến `2026-10-29 16:51:57 +07:00`. Return URL là trang hiển thị cho Buyer; trạng thái thanh toán chỉ được xác minh từ IPN/QueryDr.
 - Chờ người dùng chọn NCB, nhập thẻ/OTP test và xác nhận trên trang VNPAY. Sau khi quay lại, cần kiểm tra Checkout/Orders, PaymentAttempt, PaymentEvent và danh sách giao dịch SIT để lưu bằng chứng.
 
-## 19. Kiểm tra trạng thái hiện tại (31/10/2026)
+## 19. Giới hạn lần kiểm tra ban đầu (31/10/2026)
 
-- Không có tiến trình Node/API, worker `npm run worker:vnpay` hoặc `cloudflared`; cổng 4000 và 27017 không lắng nghe. `cloudflared` và `mongod` có cài trên máy.
-- `.env` bật VNPAY và chứa đủ cấu hình merchant, QueryDr, Return và IPN. Return/IPN cùng dùng HTTPS trên hostname Quick Tunnel cũ và đúng endpoint backend. Lệnh kiểm tra cấu hình chỉ in trạng thái/đường dẫn, không in mã merchant hay secret. DNS không phân giải được hostname cũ trong phiên hiện tại; vì không có tunnel đang chạy, chưa có URL công khai mới để xác minh hoặc lưu tại SIT.
-- MongoDB URI trỏ tới `127.0.0.1:27017/rewear_circle`; kết nối hết hạn do không có server đang nghe. Data directory `/var/lib/mongodb` tồn tại nhưng thuộc tài khoản dịch vụ và không đọc được bằng quyền phiên hiện tại. Tạo backup offline cần quyền hệ thống; thao tác không thành công do `sudo` yêu cầu mật khẩu. Không ghi dữ liệu hoặc tạo index.
-- Checkout `6ae313b98c624fe7d9d7a968` và PaymentAttempt/Event/Order/Listing liên quan chưa thể đọc lại. Vì vậy chưa xác nhận được trạng thái hiện tại của giao dịch, chưa xác nhận VNPAY có ghi nhận giao dịch hay tiền hay không. Giữ nguyên NEEDS_REVIEW/payment hold nếu đó là trạng thái trong dữ liệu; không tự đánh dấu PAID/FAILED/EXPIRED, không giải phóng Listing và không tạo giao dịch chồng lên món đó.
-- Không tạo Checkout/attempt mới vì DB hiện hành không truy cập được, không thể chọn an toàn Buyer/Listing và xác minh giá/giữ món. Không mở payment URL mới.
-- `npm test`: 13 unit/protocol kiểm tra đạt; 2 integration test bị skip vì chưa cấu hình `MONGODB_TEST_URI`. Đây là bằng chứng mô phỏng/cục bộ, không phải giao dịch Sandbox thật.
-- C chưa nghiệm thu backup, dry-run, migration hoặc index trên DB. L chưa nghiệm thu giao dịch Sandbox thật/IPN/QueryDr; M còn mở.
-- Điều kiện để tiếp tục: khôi phục MongoDB hiện hành và quyền tạo backup; sau đó audit read-only, xác nhận trạng thái giao dịch cũ và an toàn của dữ liệu demo trước khi migrate. Khởi chạy backend, worker và Quick Tunnel để nhận URL mới; người có quyền trong VNPAYGW SIT cần cập nhật IPN URL mới. Khi các bước này xong, có thể tạo giao dịch mới trên Listing đã xác minh an toàn và tiếp tục nghiệm thu L.
+- Tiến trình công cụ trong sandbox không có quyền Docker socket và bị `EPERM` khi kết nối loopback; kết luận ban đầu rằng MongoDB không chạy là sai. Sau khi kiểm tra có quyền host, container được xác nhận đang chạy; trạng thái chính xác ghi ở mục 20.
+
+## 20. Xác minh Docker, giao dịch và runtime (31/10/2026)
+
+- Docker xác nhận container MongoDB `rewear-circle-src-mongo-1` đang Up và publish `0.0.0.0:27017->27017`. Kết nối URI hiện hành tới `rewear_circle` thành công trên replica set `rs0`, writable primary.
+- Checkout `6ae313b98c624fe7d9d7a968`: NEEDS_REVIEW, tổng 350.000 VND. PaymentAttempt duy nhất NEEDS_REVIEW, merchant reference `RC20261029015b085d983a44c8026b572a`, cùng số tiền, không có provider transaction number; checkpoint cuối là NEEDS_REVIEW.
+- Hai PaymentEvent đã lưu đều từ QUERY: một REJECTED/INVALID_QUERY_SIGNATURE; một NEEDS_REVIEW/QUERYDR_UNRESOLVED_AFTER_FINAL_CHECKPOINT. Không có PaymentEvent IPN. DB hiện tại không có bằng chứng xác nhận VNPAY đã nhận tiền hoặc giao dịch đã thất bại; không đổi trạng thái.
+- Hai Order (150.000 và 200.000 VND) đều NEEDS_REVIEW/hold; hai Listing tương ứng RESERVED bởi Checkout này và paymentReviewHold=true. Không giải phóng, không tạo giao dịch đè lên.
+- Dry-run trên toàn DB phân loại Checkout COD legacy `6ae1742121ee6baefb2cb510`: Checkout/Order đã CONFIRMED, COD UNPAID, tổng/địa chỉ/snapshot/ownership khớp; Listing SOLD đúng Checkout. Bản ghi không cần cập nhật. Listing `200000000000000000000005` đang SOLD nhưng không có `soldCheckoutId`; không tự gán chủ. Một Listing PENDING, hai SOLD; hiện có 0 Listing AVAILABLE hợp lệ.
+- Backup logic `/tmp/rewear-circle-2026-10-31.archive` (30 KB) tạo trước mọi ghi DB; `mongorestore --dryRun` hoàn tất. SHA-256 `e7b12806f293bc8fe634f955a154a4bcd6aa1e2c44a3ac93ee8e6a840c2e6d78`. Không có migration hoặc cập nhật DB trong lần này.
+- So sánh schema/index cho 13 model: không thiếu index và không lệch unique/sparse/partial options.
+- `npm test` trên database test riêng `rewear_circle_codex_20261031_5321_test`: 15/15 test đạt, gồm 8 domain, 5 protocol, 1 commerce integration, 1 moderation integration. Assertion race được chỉnh để cho phép một request đồng thời tạo (201) và request kia replay (200), bất kể thứ tự hoàn tất. Đây là kiểm thử mô phỏng, không phải giao dịch Sandbox thật.
+- API trên cổng 4000 trả `/health/ready` `ready`; worker VNPAY và Quick Tunnel đang chạy. Tunnel mới `https://sale-farms-contrast-much.trycloudflare.com`; `/health/ready` trả `ready`, Return trả HTTP 200 đúng nội dung. OPTIONS tới IPN trả HTTP 200/Allow GET,HEAD mà không phát sinh PaymentEvent. IPN URL trong `.env` là `https://sale-farms-contrast-much.trycloudflare.com/api/v1/integrations/payments/vnpay/ipn`; SIT chưa được xác minh hoặc cập nhật.
+- **L còn mở:** cần người có quyền đăng nhập VNPAYGW SIT và lưu IPN URL mới. Cũng chưa thể tạo Checkout mới vì hiện không có Listing AVAILABLE hợp lệ; hai món APPROVED đang RESERVED/hold, một món PENDING và hai món SOLD (một món thiếu `soldCheckoutId`). Cần Admin duyệt Listing mới qua luồng nghiệp vụ; hiện DB có 4 User đã xác minh, không có tài khoản ADMIN. Sau khi SIT được cập nhật và có Listing được duyệt/Buyer session hợp lệ, tiếp tục tạo PAY URL rồi giao người dùng thao tác thẻ/OTP trên Sandbox. M còn mở cho đến khi đối chiếu được giao dịch Sandbox thật và đủ các ca L.
