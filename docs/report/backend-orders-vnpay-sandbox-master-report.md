@@ -506,3 +506,9 @@ Tích hợp cover attempt/idempotency, nhiều Seller, snapshot/địa chỉ b�
 - Ảnh trang “Danh sách giao dịch đã test” và “Danh sách giao dịch” đều không có giao dịch. Trang `/order/search` hiển thị Whitelabel Error Page với HTTP 403 Forbidden.
 - Đây là trạng thái phiên/quyền tra cứu trên SIT; không phải lỗi tích hợp backend. Các ảnh không xác nhận nội dung IPN URL đã lưu, nhưng lời xác nhận của người dùng được ghi nhận. DB backend vẫn không có PaymentEvent IPN.
 - Vì SIT không hiển thị giao dịch và trang tra cứu bị cấm, chưa thể đối chiếu trạng thái giao dịch cũ bằng cổng. Không kết luận thanh toán thành công hoặc thất bại từ các trang trống/403.
+
+## 22. Kiểm tra trang Merchant View tra cứu giao dịch (31/10/2026)
+
+- Mở `https://sandbox.vnpayment.vn/merchantv2/Transaction/PaymentSearch.htm` chuyển tới trang đăng nhập `/merchantv2/Users/Login.htm` với `ReturnUrl=/merchantv2/Transaction/PaymentSearch.htm`.
+- Đây là luồng đăng nhập Merchant View riêng với trang SIT Testing `/vnpaygw-sit-testing`; đường dẫn đích là chức năng tra cứu giao dịch. Chưa xác nhận tài khoản nào có quyền, vì chưa đăng nhập và không nhập thông tin xác thực.
+- Sau khi người dùng đăng nhập trực tiếp bằng tài khoản Merchant View, có thể tra merchant reference cũ tại trang này. Kết quả tra cứu chưa được xem; trạng thái Checkout tiếp tục NEEDS_REVIEW.
