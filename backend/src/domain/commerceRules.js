@@ -122,6 +122,15 @@ function readAddress(value) {
   return result;
 }
 
+function paymentReadyToShip(order) {
+  return order.paymentMethod === "COD" && order.status === "CONFIRMED" && order.paymentStatus === "UNPAID";
+}
+
+function paymentReadyToReceive(order) {
+  return order.paymentMethod === "COD" && order.status === "CONFIRMED" &&
+    ["UNPAID", "COLLECTED"].includes(order.paymentStatus);
+}
+
 module.exports = {
   problem,
   validId,
@@ -132,4 +141,6 @@ module.exports = {
   availableStates,
   sameSelection,
   readAddress,
+  paymentReadyToShip,
+  paymentReadyToReceive,
 };
