@@ -19,6 +19,8 @@ const reportSchema = new mongoose.Schema(
       required: true,
     },
     details: { type: String, default: "", trim: true },
+    contentRedacted: { type: Boolean, default: false },
+    contentRedactedAt: { type: Date, default: null },
     evidenceMediaIds: {
       type: [{ type: mongoose.Schema.Types.ObjectId, ref: "Media" }],
       default: [],

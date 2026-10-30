@@ -1,10 +1,12 @@
 # Báo cáo tổng — Backend giao nhận, khiếu nại và vận hành
 
-**Ngày cập nhật:** 29/10/2026  
+**Ngày cập nhật:** 31/10/2026
 **Mốc đối chiếu:** trạng thái backend trước khi triển khai cụm tuần 2.  
-**Trạng thái:** A–H đã hoàn tất phần hợp đồng/triển khai tương ứng; hồi quy tích hợp còn ở L. B đã áp dụng trên MongoDB local `rewear_circle`: backup xác minh được, index vật lý của phạm vi B đã khớp và một Checkout/Order legacy đã được khôi phục an toàn. Một Listing SOLD không có Order liên kết vẫn được giữ nguyên. E bổ sung index `ComplaintQuota` sau lần áp dụng B; cần backup và audit/apply riêng trước nghiệm thu DB mới. I–M còn mở. Tích hợp merchant VNPAY Sandbox thật vẫn tạm gác.
+**Trạng thái:** A–H có triển khai; hồi quy hiện đạt một phần ở L. Audit hiện tại không thấy index thiếu; index `ComplaintQuota` đã tồn tại. Hai index Case cũ dư theo prefix được giữ nguyên. Migration và retention dry-run đều có 0 candidate, không ghi dữ liệu. I còn phụ thuộc nghiệm thu worker/VNPAY; J và K có code/test nhưng thiếu lịch chạy, giám sát và cấu hình host. M đã có runbook, còn nghiệm thu triển khai. Merchant VNPAY Sandbox thật chưa được xác minh.
 
-Kế hoạch: [Giao nhận, khiếu nại và vận hành](../../plan/tuan-2-giao-nhan-khieu-nai-van-hanh-backend.md). Thư mục `plan` hiện bị Git ignore; báo cáo này là bản hợp đồng được theo dõi trong repo.
+Kế hoạch: [Giao nhận, khiếu nại và vận hành](../../plan/tuan-2-giao-nhan-khieu-nai-van-hanh-backend.md).
+
+Các mục 14–20 ghi tiến độ tại thời điểm triển khai ban đầu. Trạng thái nghiệm thu mới nhất và các kết quả kiểm tra sau đó ở mục 21 được ưu tiên khi có khác biệt.
 
 ## 1. Phạm vi, nguồn và trạng thái thực tế
 
@@ -15,18 +17,18 @@ Nguồn đã đối chiếu: Business Rules (gồm bổ sung COD 28/10), State L
 | Bước | Trạng thái | Bằng chứng/đầu ra hiện tại |
 | --- | --- | --- |
 | A — Hợp đồng, quyền, trạng thái | Hoàn tất về tài liệu | Các mục 2–13 bên dưới; cập nhật kế hoạch và tài liệu nguồn. Không chứng nhận tính năng hoạt động. |
-| B — Dữ liệu/index/migration | Hoàn tất trên MongoDB local theo schema tại thời điểm B | Index vật lý ban đầu khớp; 1 Checkout/Order COD legacy được chuyển an toàn; post-audit không báo index thiếu/thừa. E sau đó thêm collection/index ComplaintQuota; cần backup và audit/apply riêng trước nghiệm thu DB mới. |
-| C — Quyền/DTO | Đã triển khai; regression chờ Bước L | Tài khoản Support/Admin không dùng route Order/Checkout của USER; DTO allowlist; Admin Case detail chỉ trả Order đích; ảnh private kiểm tra Case và assignment hiện tại. |
-| D — Giao/nhận | Đã triển khai; regression chờ Bước L | Đồng bộ trạng thái COD/VNPAY, Case/hold, quyền SOLD đúng Seller/Checkout; idempotency, audit transaction và Order `__v` gate; DTO có `canShip`/`canConfirmReceipt`. |
-| E — Khiếu nại | Đã triển khai; regression chờ L | Buyer tạo/theo dõi DELIVERY/ITEM, snapshot, evidence, transaction/audit/notification, quota và idempotency; tạo/đóng tranh Order `__v`. Index ComplaintQuota mới chưa apply/audit ở MongoDB local. |
-| F — Admin | Đã triển khai; regression chờ L | Queue chung REPORT/DELIVERY/ITEM, lọc/count, assignment có version, quyết định có idempotency/version, đóng vụ gửi thông báo không đổi tài chính/Listing Order. |
-| G — Support/contact | Đã triển khai; regression chờ L | Support list/detail chỉ lấy assignment và role hiện tại; Order DTO bị giới hạn; contact-access trả recipient snapshot tối thiểu, audit trong transaction trước response. |
-| H — Media/notification | Đã triển khai; regression chờ L | Evidence/snapshot/ảnh tin REPORT có quyền theo Case; audit trước stream và private no-store; notification DTO allowlist, message đóng vụ cố định, dedupe cùng transaction. |
-| I — Job nền | Có worker VNPAY | Chưa bổ sung nghiệm thu vận hành/heartbeat trong cụm này. |
-| J — Log/audit | Có request ID và audit nền | Error handler còn log object lỗi thô; chưa chuẩn hóa toàn bộ. |
-| K — Retention | Chưa thực hiện | Chưa có job dọn hồ sơ/bằng chứng theo hợp đồng. |
-| L — Kiểm thử | Chưa thực hiện | Không chạy test ứng dụng/DB tại Bước A. |
-| M — Bàn giao | Chưa thực hiện | Chưa nghiệm thu deploy, vận hành hoặc Sandbox thật. |
+| B — Dữ liệu/index/migration | Migration legacy đã áp dụng; audit mới đạt không thiếu index | `ComplaintQuota.buyerId_1` đã có. Audit không báo index thiếu; còn hai Case index cũ là prefix của index mới. Migration dry-run hiện 0 candidate/0 ghi. |
+| C — Quyền/DTO | Code có; tích hợp đạt một phần | Test xác nhận user khác không đọc Order và Support detail không trả địa chỉ mặc định; assignment/contact-access/revoke được chạy. Chưa phủ toàn bộ role/media/race. |
+| D — Giao/nhận | COD đạt trong test tích hợp; VNPAY chưa nghiệm thu | COD shipment/collection/receipt và replay đạt; active Case chặn shipment. VNPAY runtime đang tắt, chưa thử giao/nhận VNPAY. |
+| E — Khiếu nại | DELIVERY/ITEM COD đạt một phần | Test xác nhận tạo, replay, sai shape, receipt list/detail; hiện chưa có Complaint production. Các race/quota/fault injection đầy đủ còn mở. |
+| F — Admin | REPORT và Order Case một phần đạt | Test chạy hàng chờ, stale assignment, assignment/revoke, review/close và close notification dedupe; race và các outcome còn mở. |
+| G — Support/contact | Một phần đạt | Test xác nhận Support chỉ xem vụ được giao, contact-access có audit và mất quyền sau unassign. Chưa chạy mọi revoke/fault case. |
+| H — Media/notification | Một phần đạt | Notification tạo/đóng và dedupe đã chạy trong test; upload streaming, ảnh private trực tiếp và cache chưa có test tích hợp ở lượt này. |
+| I — Job nền | Chưa nghiệm thu | Worker VNPAY có log workerId/runId/heartbeat trong code nhưng không chạy cùng API; VNPAY hiện tắt. Restart/đa-worker và QueryDr thật còn mở. |
+| J — Log/audit | Đã chuẩn hóa trong code, vận hành một phần | Request log JSON allowlist có test loại query string; startup/seed/scripts/worker không log object Error hoặc mật khẩu. Log rotation, alert, metrics và kiểm thử DLP ngoài ứng dụng chưa cấu hình. |
+| K — Retention | Code và test riêng đạt; triển khai chưa xong | Dry-run mặc định, guard áp dụng, 12 tháng, xóa media không còn tham chiếu, retry marker. Test giả đạt; DB dự án có 0 hồ sơ đủ hạn. Chưa đặt lịch/áp dụng production. |
+| L — Kiểm thử | Đạt một phần trên MongoDB replica set riêng | Domain, protocol fixture, API COD/complaint/Support, moderation và retention test qua. Race matrix, upload/private media, worker crash/đa worker, tải và giao dịch Sandbox thật còn mở. |
+| M — Bàn giao | Đã cập nhật runbook, chưa nghiệm thu môi trường | Đã bổ sung runbook và NFR hiện trạng. Log rotation, lịch retention, backup/apply ngoài test, deploy và Sandbox thật còn chờ. |
 
 ## 2. Nhật ký quyết định Bước A
 
@@ -433,7 +435,7 @@ Backend duy trì code/contract/index/migration/runbook; người vận hành c�
 - Cùng key/payload replay trả ID gốc và trạng thái Case hiện tại; sai fingerprint trả conflict. Bản mới lưu snapshot, audit `COMPLAINT_CREATED` và notification `COMPLAINT_RECEIVED` trong một transaction.
 - Buyer có `GET /orders/:id/complaints` (lọc type/status, phân trang) và `GET /orders/:id/complaints/:complaintId`; detail chỉ hiện bản gửi của Buyer, trạng thái và kết quả công khai khi đóng. Các cờ Order DTO `canComplainDelivery`/`canComplainItem` phản ánh trạng thái, hold, Case, cooldown và quota; server vẫn kiểm tra lại khi ghi.
 
-**Giới hạn còn lại:** Bước E thêm unique index cho collection `ComplaintQuota`; index mới hiện chỉ có trong schema/script, chưa áp dụng hoặc audit trên MongoDB local. Preflight read-only và dry-run ngày 29/10 không kết nối được `127.0.0.1:27017` (`MongooseServerSelectionError`/`EPERM`), nên tôi không tạo backup mới hay ghi index/migration trong lượt này. Không có DB write trong E/F. Regression cho quyền, quota, retry, song song tạo Case và shipment/receipt được giữ cho L.
+**Trạng thái tại thời điểm cập nhật 29/10:** Chưa kết nối MongoDB và chưa audit index sau khi thêm ComplaintQuota. Kết quả audit mới ngày 31/10 ở mục 21 supersedes trạng thái này: index `ComplaintQuota.buyerId_1` tồn tại, không còn index thiếu; migration dry-run có 0 candidate. Không có dữ liệu dự án bị ghi bởi đợt audit mới.
 
 ## 18. Kết quả F — Hàng chờ, phân công và quyết định Admin
 
@@ -462,4 +464,46 @@ Backend duy trì code/contract/index/migration/runbook; người vận hành c�
 - H cập nhật API Routes, Security & Privacy, kế hoạch và báo cáo tổng theo hành vi code. Không thay đổi dữ liệu MongoDB hoặc apply index trong H.
 
 **Trạng thái H:** code và tài liệu hoàn tất; upload→complaint→media, quyền trực tiếp, cache và notification replay chưa chạy regression tích hợp, để ở L. Trong lượt triển khai không gọi API, không ghi trực tiếp MongoDB hoặc chạy migration; chưa chạy kiểm thử ứng dụng.
+
+## 21. Cập nhật nghiệm thu, audit và giới hạn còn mở — 31/10/2026
+
+### Kiểm thử hồi quy trong database riêng
+
+Chạy `npm test` trong `backend` với `MONGODB_TEST_URI` trỏ tới MongoDB replica set riêng, database tên `rewear_circle_fulfillment_task_test`. Môi trường: Node.js v26.7.0, npm 11.19.0, MongoDB 8.2.7. Không dùng database dự án. Kết quả gần nhất sau sửa:
+
+| Nhóm | Kết quả |
+| --- | ---: |
+| Domain | 8/8 đạt |
+| PAY/IPN/QueryDr protocol fixture | 4/4 đạt; đây là test mô phỏng, không phải giao dịch Sandbox |
+| Structured request logging | 1/1 đạt, xác nhận route template và query string không bị log |
+| COD checkout, complaint DELIVERY/ITEM, assignment, Support/contact, collection, shipment/receipt và replay | 1/1 đạt |
+| Moderation REPORT, Admin decision và notification | 1/1 đạt |
+| Retention dry-run/apply trên hồ sơ giả và media trong thư mục tạm | 1/1 đạt |
+
+Các ca này chưa bao gồm toàn bộ race/fault matrix, upload streaming/ảnh private trực tiếp, worker crash/đa worker, kiểm thử tải hoặc giao dịch VNPAY thật. Bộ test xác nhận luồng COD và giao thức được mã hóa; không chứng minh merchant/VNPAY đã nhận giao dịch.
+
+### Trạng thái MongoDB dự án tại thời điểm audit
+
+Audit `READ_ONLY_DRY_RUN` ghi `writesPerformed: 0`; migration dry-run và retention dry-run cũng đều không ghi:
+
+- 1 Checkout COD và 1 Order COD ở `CONFIRMED/UNPAID`; quan hệ Buyer, totals, recipient snapshot và Order item hợp lệ.
+- 1 Checkout VNPAY ở `NEEDS_REVIEW`; có 2 Order `NEEDS_REVIEW` cùng Checkout. Có 1 PaymentAttempt VNPAY `NEEDS_REVIEW`.
+- Hai PaymentEvent hiện có đều từ nguồn Query: một event bị từ chối do `INVALID_QUERY_SIGNATURE`, một event kết thúc `QUERYDR_UNRESOLVED_AFTER_FINAL_CHECKPOINT`. Không có bằng chứng IPN thành công được xác minh; các event này không đủ căn cứ để chuyển giao dịch thành PAID hoặc FAILED.
+- Hai Listing liên quan VNPAY vẫn `RESERVED` với payment review hold. Không giải phóng, không tạo Checkout mới trên chúng.
+- Listing khác: 1 `AVAILABLE`, 1 `SOLD` gắn đúng Checkout, 1 `SOLD` không có Checkout liên kết. Listing `SOLD` mồ côi được giữ nguyên.
+- Hiện không có Case, Complaint hoặc Notification. Migration dry-run: `candidates: 0`, `eligible: 0`. Retention dry-run: `eligibleCaseCount: 0`.
+- Tất cả index mong đợi đều có. `ComplaintQuota.buyerId_1` đã tồn tại. Hai index Case ba trường cũ dư do là prefix của index mới; không xóa vì không cần cho dữ liệu hiện tại. Không tạo backup mới vì không có thao tác ghi DB.
+
+### Log và retention
+
+- Request log JSON giới hạn ở requestId/method/route template/status/duration/mã lỗi đã chuẩn hóa. Không log query/body/header/cookie hoặc object Error. Seed không in password; startup, audit, migration và worker lỗi ghi error type/code đã lọc.
+- Retention có lệnh `npm run retention:cases`, mặc định dry-run. `--apply` giữ metadata tombstone, ẩn nội dung Report/Complaint/Case, làm rỗng lý do tự do trong audit/notification thuộc Case, và chỉ xóa media không còn tham chiếu từ Listing/Order/Case/Complaint/Report. Media được đánh dấu `RETENTION_PENDING` để retry lỗi I/O; API không phục vụ file đang chờ.
+- Hồi quy retention xác nhận Case active và Case chưa đủ 12 tháng không đổi, file chia sẻ được giữ, file riêng được xóa, nội dung detail trả `410 CONTENT_REDACTED`, và replay job không nhân AuditEvent.
+- Chưa đặt lịch chạy hằng ngày, cấu hình log rotation/alert/metrics hoặc áp dụng retention trên DB dự án. Database không `_test` cần backup đã xác minh cùng hai cờ bảo vệ trước khi `--apply`.
+
+### VNPAY và các bước còn mở
+
+VNPAY runtime hiện tắt; test fixture giao thức 4/4 không thay cho thanh toán thật. Cổng SIT cho danh sách tìm kiếm trả 403 theo ảnh giao diện và danh sách giao dịch/test không hiển thị giao dịch. Điều này cho biết phiên/quyền truy cập merchant SIT chưa cho phép đối chiếu; không chứng minh callback backend sai hay thành công. Cần quyền tra cứu phù hợp trên SIT và một giao dịch Sandbox có trạng thái xác nhận được từ merchant/provider mới nghiệm thu phần thật. Return URL chỉ hiển thị kết quả. Attempt `NEEDS_REVIEW`, QueryDr signature không hợp lệ và các Listing hold tiếp tục được giữ.
+
+Runbook khởi động, health, log, audit/migration dry-run, retention, backup guard và giới hạn VNPAY ở [backend-fulfillment-operations.md](../runbooks/backend-fulfillment-operations.md). Mục I, L, M vẫn mở cho worker/VNPAY thật, race/fault/load đầy đủ, lịch retention/log rotation, deploy và xác minh sau triển khai.
 

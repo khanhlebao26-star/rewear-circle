@@ -1,18 +1,17 @@
 const router = require("express").Router();
 const Listing = require("../models/Listing");
 const Case = require("../models/Case");
+const Complaint = require("../models/Complaint");
+const ComplaintQuota = require("../models/ComplaintQuota");
 const AuditEvent = require("../models/AuditEvent");
 const {
   Cart,
   Checkout,
   Order,
-  PaymentAttempt,
-  PaymentEvent,
   CodCollection,
   CodReturnRequest,
 } = require("../models/commerce");
-const { createCheckout, cancelVnpayCheckout } = require("../services/checkout");
-const { createPaymentAttempt } = require("../services/paymentAttempts");
+const { createCheckout } = require("../services/checkout");
 const {
   cancelCodOrder,
   recordCodCollection,
@@ -21,9 +20,12 @@ const {
   markOrderShipped,
   confirmOrderReceipt,
 } = require("../services/codOrders");
-const { success } = require("../http/responses");
+const { success, failure } = require("../http/responses");
 const { readDiscoveryQuery } = require("../domain/discoveryRules");
+const { orderItemDTO } = require("../domain/orderDTO");
 const { readIdempotencyKey, fingerprint } = require("../domain/idempotency");
+const { readComplaintInput } = require("../domain/moderationRules");
+const { createComplaint, listBuyerComplaints, getBuyerComplaint } = require("../services/complaints");
 const {
   requireAuth,
   requireVerifiedEmail,
@@ -36,9 +38,18 @@ const {
   approvedVisibleListingQuery,
   snapshot,
   readAddress,
+  paymentReadyToShip,
+  paymentReadyToReceive,
 } = require("../domain/commerceRules");
 
-const buyerOnly = [requireAuth, requireVerifiedEmail];
+function requireBuyerSellerAccess(req, res, next) {
+  if (req.user.role !== "USER") {
+    return failure(req, res, 404, "NOT_FOUND", "Không tìm thấy tài nguyên.");
+  }
+  return next();
+}
+
+const buyerOnly = [requireAuth, requireBuyerSellerAccess, requireVerifiedEmail];
 const checkoutStatuses = [
   "OPEN", "COMPLETED", "PENDING_PAYMENT", "PAID", "PAYMENT_FAILED", "EXPIRED",
   "CANCELLED", "CONFIRMED", "NEEDS_REVIEW",
@@ -47,7 +58,6 @@ const orderStatuses = [
   "PLACED", "PENDING", "CONFIRMED", "PAID", "PAYMENT_FAILED", "EXPIRED",
   "CANCELLED", "NEEDS_REVIEW", "RETURNED", "COMPLETED",
 ];
-const paymentStatuses = ["INITIATED", "PENDING", "SUCCESS", "FAILED", "EXPIRED", "NEEDS_REVIEW"];
 
 function emptyBody(req) {
   const body = req.body ?? {};
@@ -83,8 +93,8 @@ function readCheckoutInput(body) {
   if (new Set(items.map((item) => item.listingId)).size !== items.length) {
     throw problem(422, "DUPLICATE_ITEM", "Danh sách có món trùng.");
   }
-  if (!["COD", "VNPAY"].includes(body.paymentMethod)) {
-    throw problem(422, "VALIDATION_ERROR", "paymentMethod phải là COD hoặc VNPAY.");
+  if (body.paymentMethod !== "COD") {
+    throw problem(422, "PAYMENT_METHOD_UNAVAILABLE", "Hiện chỉ hỗ trợ thanh toán khi nhận hàng (COD).");
   }
   const shippingAddress = readAddress({
     fullName: body.recipientName,
@@ -121,46 +131,112 @@ function checkoutDTO(checkout, orders = []) {
   };
 }
 
-async function fulfillmentByOrder(orders) {
+function shippingAddressDTO(address) {
+  if (!address) return null;
+  return {
+    fullName: address.fullName,
+    phone: address.phone,
+    address: address.address,
+  };
+}
+
+async function fulfillmentByOrder(orders, collectionsPromise, returnsPromise) {
   if (!orders.length) return new Map();
   const orderIds = orders.map((order) => order._id);
   const listingIds = orders.flatMap((order) => order.items.map((item) => item.listingId));
-  const [listings, cases] = await Promise.all([
-    Listing.find({ _id: { $in: listingIds } }).select("saleStatus soldCheckoutId paymentReviewHold paymentReviewCheckoutIds"),
-    Case.find({ targetType: "ORDER", targetId: { $in: orderIds }, status: { $in: ["OPEN", "IN_REVIEW"] } })
-      .select("targetId"),
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const [collections, returnRequests, listings, cases] = await Promise.all([
+    collectionsPromise,
+    returnsPromise,
+    Listing.find({ _id: { $in: listingIds } }).select("ownerId saleStatus soldCheckoutId paymentReviewHold paymentReviewCheckoutIds"),
+    Case.find({
+      targetType: "ORDER",
+      targetId: { $in: orderIds },
+      type: { $in: ["DELIVERY", "ITEM"] },
+      $or: [
+        { status: { $in: ["OPEN", "IN_REVIEW"] } },
+        { status: "CLOSED", closedAt: { $gt: cutoff } },
+      ],
+    }).select("targetId type status closedAt"),
   ]);
+  const activeCases = cases.filter((record) => record.status !== "CLOSED");
+  const complaintCounts = activeCases.length
+    ? await Complaint.aggregate([
+        { $match: { caseId: { $in: activeCases.map((record) => record._id) } } },
+        { $group: { _id: "$caseId", count: { $sum: 1 } } },
+      ])
+    : [];
+  const collectionByOrder = new Map(collections.map((collection) => [String(collection.orderId), collection]));
+  const returnByOrder = new Map(returnRequests.map((request) => [String(request.orderId), request]));
   const listingById = new Map(listings.map((listing) => [String(listing._id), listing]));
-  const casesByOrder = new Set(cases.map((record) => String(record.targetId)));
+  const activeCaseByOrder = new Map(activeCases.map((record) => [String(record.targetId), record]));
+  const recentClosedCases = new Set(cases
+    .filter((record) => record.status === "CLOSED")
+    .map((record) => `${record.targetId}:${record.type}`));
+  const complaintCountByCase = new Map(complaintCounts.map((record) => [String(record._id), record.count]));
+
   return new Map(orders.map((order) => {
     const items = order.items.map((item) => listingById.get(String(item.listingId)));
-    const stateAllowsFulfillment =
-      (order.paymentMethod === "COD" && order.status === "CONFIRMED") ||
-      (order.paymentMethod === "VNPAY" && order.status === "PAID");
-    const canFulfill = Boolean(
-      stateAllowsFulfillment &&
-      !order.paymentReviewHold &&
-      !casesByOrder.has(String(order._id)) &&
-      items.length === order.items.length &&
-      items.every((listing) => listing && listing.saleStatus === "SOLD" &&
-        String(listing.soldCheckoutId) === String(order.checkoutId) &&
-        !listing.paymentReviewHold && listing.paymentReviewCheckoutIds.length === 0),
+    const collection = collectionByOrder.get(String(order._id));
+    const returnRequest = returnByOrder.get(String(order._id));
+    const activeCase = activeCaseByOrder.get(String(order._id));
+    const validCollection = order.paymentStatus !== "COLLECTED" || Boolean(
+      order.shippedAt && collection &&
+      String(collection._id) === String(order.codCollectionId) &&
+      String(collection.buyerId) === String(order.buyerId) &&
+      String(collection.sellerId) === String(order.sellerId) &&
+      collection.amount === order.total && collection.currency === order.currency,
     );
-    return [String(order._id), canFulfill];
+    const financiallySafe = Boolean(!order.paymentReviewHold && order.paymentStatus !== "NEEDS_REVIEW" &&
+      items.length === order.items.length &&
+      items.every((listing, index) => listing &&
+        String(order.items[index].sellerId) === String(order.sellerId) &&
+        String(listing.ownerId) === String(order.sellerId) && listing.saleStatus === "SOLD" &&
+        String(listing.soldCheckoutId) === String(order.checkoutId) &&
+        !listing.paymentReviewHold && (listing.paymentReviewCheckoutIds || []).length === 0));
+    const canFulfill = financiallySafe && validCollection && paymentReadyToReceive(order) && !activeCase;
+    const canAddComplaint = (type) => activeCase
+      ? activeCase.type === type && (complaintCountByCase.get(String(activeCase._id)) || 0) < 3
+      : !recentClosedCases.has(`${order._id}:${type}`);
+    const returnException = order.paymentMethod === "COD" &&
+      order.status === "NEEDS_REVIEW" && order.paymentStatus === "UNPAID" &&
+      Boolean(order.shippedAt) && !order.receivedAt && !order.codCollectionId &&
+      ["OPEN", "REJECTED"].includes(returnRequest?.status) &&
+      String(returnRequest?.orderId) === String(order._id);
+    const canComplainDelivery = financiallySafe && !order.receivedAt && canAddComplaint("DELIVERY") && (
+      (order.paymentMethod === "COD" && order.status === "CONFIRMED" &&
+        ["UNPAID", "COLLECTED"].includes(order.paymentStatus) &&
+        (order.paymentStatus !== "COLLECTED" || (order.shippedAt && validCollection))) ||
+      returnException
+    );
+    const canComplainItem = financiallySafe && order.status === "COMPLETED" && Boolean(order.receivedAt) &&
+      canAddComplaint("ITEM") && (
+        (order.paymentMethod === "COD" && ["UNPAID", "COLLECTED"].includes(order.paymentStatus) && validCollection)
+      );
+    return [String(order._id), { canFulfill, canComplainDelivery, canComplainItem }];
   }));
 }
 
 async function orderDTOs(orders, viewerId) {
-  const [canFulfill, collections, returns] = await Promise.all([
-    fulfillmentByOrder(orders),
-    CodCollection.find({ orderId: { $in: orders.map((order) => order._id) } }),
-    CodReturnRequest.find({ orderId: { $in: orders.map((order) => order._id) } }),
+  const collectionsPromise = CodCollection.find({ orderId: { $in: orders.map((order) => order._id) } }).exec();
+  const returnsPromise = CodReturnRequest.find({ orderId: { $in: orders.map((order) => order._id) } }).exec();
+  const quotaPromise = ComplaintQuota.findOne({ buyerId: viewerId }).select("recentSubmissions").lean();
+  const [fulfillment, collections, returns, quota] = await Promise.all([
+    fulfillmentByOrder(orders, collectionsPromise, returnsPromise),
+    collectionsPromise,
+    returnsPromise,
+    quotaPromise,
   ]);
+  const quotaAvailable = (quota?.recentSubmissions || []).filter(
+    (submittedAt) => submittedAt.getTime() > Date.now() - 24 * 60 * 60 * 1000,
+  ).length < 5;
   const collectionByOrder = new Map(collections.map((collection) => [String(collection.orderId), collection]));
   const returnByOrder = new Map(returns.map((record) => [String(record.orderId), record]));
   return orders.map((order) => {
     const buyer = String(order.buyerId) === String(viewerId);
-    const mayReadAddress = buyer || canFulfill.get(String(order._id));
+    const capabilities = fulfillment.get(String(order._id)) || {};
+    const mayReadAddress = buyer || capabilities.canFulfill;
+    const canFulfillOrder = Boolean(capabilities.canFulfill);
     const collection = collectionByOrder.get(String(order._id));
     const returnRequest = returnByOrder.get(String(order._id));
     return {
@@ -168,18 +244,22 @@ async function orderDTOs(orders, viewerId) {
       checkoutId: String(order.checkoutId),
       buyerId: String(order.buyerId),
       sellerId: String(order.sellerId),
-      items: order.items,
+      items: order.items.map(orderItemDTO),
       status: order.status,
       paymentMethod: order.paymentMethod,
       paymentStatus: order.paymentStatus,
       paymentReviewHold: order.paymentReviewHold,
-      paymentReviewReason: order.paymentReviewReason,
       currency: order.currency,
       subtotal: order.subtotal,
       shippingFee: order.shippingFee,
       total: order.total,
-      ...(mayReadAddress ? { shippingAddress: order.shippingAddress } : {}),
-      canFulfill: Boolean(canFulfill.get(String(order._id))),
+      ...(mayReadAddress ? { shippingAddress: shippingAddressDTO(order.shippingAddress) } : {}),
+      canFulfill: canFulfillOrder,
+      canShip: !buyer && canFulfillOrder && paymentReadyToShip(order) && !order.shippedAt,
+      canConfirmReceipt: buyer && canFulfillOrder && paymentReadyToReceive(order) &&
+        Boolean(order.shippedAt) && !order.receivedAt,
+      canComplainDelivery: buyer && quotaAvailable && Boolean(capabilities.canComplainDelivery),
+      canComplainItem: buyer && quotaAvailable && Boolean(capabilities.canComplainItem),
       carrierName: order.carrierName,
       trackingCode: order.trackingCode,
       shippedAt: order.shippedAt,
@@ -317,7 +397,7 @@ router.get("/listings/:id", async (req, res) => {
   }, 200, { serverNow: new Date().toISOString() });
 });
 
-router.get("/cart", requireAuth, async (req, res) => {
+router.get("/cart", requireAuth, requireBuyerSellerAccess, async (req, res) => {
   const cart = await ensureCart(req.user._id);
 
   const listings = await Listing.find({
@@ -375,7 +455,7 @@ router.post("/cart/items", ...buyerOnly, async (req, res) => {
   return success(req, res, cart, 200, { serverNow: new Date().toISOString() });
 });
 
-router.delete("/cart/items/:id", requireAuth, async (req, res) => {
+router.delete("/cart/items/:id", requireAuth, requireBuyerSellerAccess, async (req, res) => {
   checkId(req.params.id);
 
   await Cart.updateOne(
@@ -409,7 +489,7 @@ router.post("/checkouts", ...buyerOnly, async (req, res) => {
   });
 });
 
-router.get("/me/checkouts", requireAuth, async (req, res) => {
+router.get("/me/checkouts", requireAuth, requireBuyerSellerAccess, async (req, res) => {
   const page = readPagination(req.query, ["status", "page", "limit"], checkoutStatuses);
   if (!page) throw problem(422, "VALIDATION_ERROR", "Bộ lọc hoặc phân trang không hợp lệ.");
   const filter = { buyerId: req.user._id, ...(page.status ? { status: page.status } : {}) };
@@ -433,7 +513,7 @@ router.get("/me/checkouts", requireAuth, async (req, res) => {
   });
 });
 
-router.get("/checkouts/:id", requireAuth, async (req, res) => {
+router.get("/checkouts/:id", requireAuth, requireBuyerSellerAccess, async (req, res) => {
   checkId(req.params.id);
   const checkout = await Checkout.findOne({
     _id: req.params.id,
@@ -443,31 +523,23 @@ router.get("/checkouts/:id", requireAuth, async (req, res) => {
   if (!checkout) {
     throw problem(404, "NOT_FOUND", "Không tìm thấy checkout.");
   }
-  const [orders, attempt] = await Promise.all([
-    Order.find({ checkoutId: checkout._id }).sort({ sellerId: 1 }),
-    PaymentAttempt.findOne({ checkoutId: checkout._id }).select("_id status expiresAt verifiedAt"),
-  ]);
+  const orders = await Order.find({ checkoutId: checkout._id }).sort({ sellerId: 1 });
   const orderData = await orderDTOs(orders, req.user._id);
   const now = new Date();
-  const isPending = checkout.paymentMethod === "VNPAY" && checkout.status === "PENDING_PAYMENT" && checkout.expiresAt > now;
   return success(req, res, {
     ...checkoutDTO(checkout, orders),
     orders: orderData,
-    attemptId: attempt ? String(attempt._id) : null,
-    canPay: Boolean(isPending),
-    canCancel: Boolean(isPending && !attempt),
   }, 200, { serverNow: now.toISOString() });
 });
 
-router.get("/checkouts/:id/payment", requireAuth, async (req, res) => {
+router.get("/checkouts/:id/payment", requireAuth, requireBuyerSellerAccess, async (req, res) => {
   checkId(req.params.id);
   const checkout = await Checkout.findOne({ _id: req.params.id, buyerId: req.user._id });
   if (!checkout) throw problem(404, "NOT_FOUND", "Không tìm thấy checkout.");
-  if (checkout.paymentMethod === "COD") {
-    const orders = await Order.find({ checkoutId: checkout._id }).sort({ sellerId: 1 });
-    const collections = await CodCollection.find({ orderId: { $in: orders.map((order) => order._id) } });
-    const byOrder = new Map(collections.map((collection) => [String(collection.orderId), collection]));
-    return success(req, res, {
+  const orders = await Order.find({ checkoutId: checkout._id }).sort({ sellerId: 1 });
+  const collections = await CodCollection.find({ orderId: { $in: orders.map((order) => order._id) } });
+  const byOrder = new Map(collections.map((collection) => [String(collection.orderId), collection]));
+  return success(req, res, {
       paymentMethod: "COD",
       attemptId: null,
       paymentStatus: checkout.paymentStatus,
@@ -493,199 +565,7 @@ router.get("/checkouts/:id/payment", requireAuth, async (req, res) => {
           } : null,
         };
       }),
-    }, 200, { serverNow: new Date().toISOString() });
-  }
-  const attempt = await PaymentAttempt.findOne({ checkoutId: checkout._id })
-    .select("_id status amount currency expiresAt verifiedAt responseCode transactionStatus");
-  return success(req, res, {
-    paymentMethod: "VNPAY",
-    attemptId: attempt ? String(attempt._id) : null,
-    status: attempt?.status || "NOT_STARTED",
-    paymentStatus: checkout.paymentStatus,
-    checkoutStatus: checkout.status,
-    amount: checkout.total,
-    currency: checkout.currency,
-    expiresAt: checkout.expiresAt,
-    verifiedAt: attempt?.verifiedAt || null,
-    needsReview: checkout.status === "NEEDS_REVIEW" || attempt?.status === "NEEDS_REVIEW",
   }, 200, { serverNow: new Date().toISOString() });
-});
-
-router.get("/admin/payments", requireAuth, requireAdmin, async (req, res) => {
-  const allowed = ["orderId", "providerReference", "status", "page", "limit"];
-  if (Object.keys(req.query).some((key) => !allowed.includes(key)) ||
-      (req.query.orderId !== undefined && !validId(req.query.orderId)) ||
-      (req.query.providerReference !== undefined &&
-        (typeof req.query.providerReference !== "string" || req.query.providerReference.length < 1 || req.query.providerReference.length > 100))) {
-    throw problem(422, "VALIDATION_ERROR", "Bộ lọc thanh toán không hợp lệ.");
-  }
-  const page = readPagination(req.query, allowed, paymentStatuses);
-  if (!page) throw problem(422, "VALIDATION_ERROR", "Bộ lọc hoặc phân trang không hợp lệ.");
-  let checkoutIds;
-  if (req.query.orderId) {
-    const order = await Order.findById(req.query.orderId).select("checkoutId");
-    checkoutIds = order ? [order.checkoutId] : [];
-  }
-  const filter = {
-    ...(req.query.providerReference ? { merchantReference: req.query.providerReference } : {}),
-    ...(page.status ? { status: page.status } : {}),
-    ...(checkoutIds ? { checkoutId: { $in: checkoutIds } } : {}),
-  };
-  const [attempts, total] = await Promise.all([
-    PaymentAttempt.find(filter).sort({ createdAt: -1, _id: -1 })
-      .skip((page.page - 1) * page.limit).limit(page.limit),
-    PaymentAttempt.countDocuments(filter),
-  ]);
-  const [checkouts, orders] = await Promise.all([
-    Checkout.find({ _id: { $in: attempts.map((attempt) => attempt.checkoutId) } }).select("status paymentStatus total currency paymentMethod"),
-    Order.find({ checkoutId: { $in: attempts.map((attempt) => attempt.checkoutId) } }).select("_id checkoutId sellerId status paymentStatus total currency"),
-  ]);
-  const checkoutById = new Map(checkouts.map((checkout) => [String(checkout._id), checkout]));
-  const ordersByCheckout = new Map();
-  for (const order of orders) {
-    const key = String(order.checkoutId);
-    if (!ordersByCheckout.has(key)) ordersByCheckout.set(key, []);
-    ordersByCheckout.get(key).push(order);
-  }
-  if (attempts.length) {
-    await AuditEvent.create(attempts.map((attempt) => ({
-      actorId: req.user._id,
-      action: "PAYMENT_LOOKUP_READ",
-      targetType: "PAYMENT_ATTEMPT",
-      targetId: attempt._id,
-      requestId: req.requestId,
-      fromState: attempt.status,
-      toState: attempt.status,
-    })));
-  }
-  return success(req, res, attempts.map((attempt) => {
-    const checkout = checkoutById.get(String(attempt.checkoutId));
-    return {
-      attemptId: String(attempt._id),
-      checkoutId: String(attempt.checkoutId),
-      buyerId: String(attempt.buyerId),
-      provider: attempt.provider,
-      providerReference: attempt.merchantReference,
-      providerTransactionNo: attempt.providerTransactionNo || null,
-      status: attempt.status,
-      amount: attempt.amount,
-      currency: attempt.currency,
-      expiresAt: attempt.expiresAt,
-      verifiedAt: attempt.verifiedAt,
-      responseCode: attempt.responseCode,
-      transactionStatus: attempt.transactionStatus,
-      reconciliation: {
-        checkpoint: attempt.reconciliation.checkpoint,
-        requestCount: attempt.reconciliation.requestCount,
-        lastRequestedAt: attempt.reconciliation.lastRequestedAt,
-        lastResponseAt: attempt.reconciliation.lastResponseAt,
-        lastResponseCode: attempt.reconciliation.lastResponseCode,
-        lastTransactionStatus: attempt.reconciliation.lastTransactionStatus,
-      },
-      checkout: checkout ? { status: checkout.status, paymentStatus: checkout.paymentStatus, total: checkout.total, currency: checkout.currency } : null,
-      orders: (ordersByCheckout.get(String(attempt.checkoutId)) || []).map((order) => ({
-        orderId: String(order._id), sellerId: String(order.sellerId), status: order.status,
-        paymentStatus: order.paymentStatus, total: order.total, currency: order.currency,
-      })),
-    };
-  }), 200, { page: page.page, limit: page.limit, total, serverNow: new Date().toISOString() });
-});
-
-router.get("/admin/payments/:id", requireAuth, requireAdmin, async (req, res) => {
-  checkId(req.params.id);
-  const attempt = await PaymentAttempt.findById(req.params.id);
-  if (!attempt) throw problem(404, "NOT_FOUND", "Không tìm thấy payment attempt.");
-  const [checkout, orders, events] = await Promise.all([
-    Checkout.findById(attempt.checkoutId).select("status paymentStatus total currency paymentMethod expiresAt"),
-    Order.find({ checkoutId: attempt.checkoutId }).select("_id sellerId status paymentStatus total currency shippedAt receivedAt paymentReviewHold paymentReviewReason"),
-    PaymentEvent.find({ paymentAttemptId: attempt._id }).sort({ receivedAt: -1, _id: -1 }).limit(100),
-  ]);
-  await AuditEvent.create([{
-    actorId: req.user._id,
-    action: "PAYMENT_DETAIL_READ",
-    targetType: "PAYMENT_ATTEMPT",
-    targetId: attempt._id,
-    requestId: req.requestId,
-    fromState: attempt.status,
-    toState: attempt.status,
-  }]);
-  return success(req, res, {
-    attempt: {
-      attemptId: String(attempt._id),
-      checkoutId: String(attempt.checkoutId),
-      buyerId: String(attempt.buyerId),
-      provider: attempt.provider,
-      providerReference: attempt.merchantReference,
-      providerTransactionNo: attempt.providerTransactionNo || null,
-      status: attempt.status,
-      amount: attempt.amount,
-      currency: attempt.currency,
-      requestedAt: attempt.requestedAt,
-      expiresAt: attempt.expiresAt,
-      verifiedAt: attempt.verifiedAt,
-      responseCode: attempt.responseCode,
-      transactionStatus: attempt.transactionStatus,
-      reconciliation: attempt.reconciliation,
-    },
-    checkout: checkout ? {
-      status: checkout.status, paymentStatus: checkout.paymentStatus,
-      total: checkout.total, currency: checkout.currency, paymentMethod: checkout.paymentMethod,
-      expiresAt: checkout.expiresAt,
-    } : null,
-    orders: orders.map((order) => ({
-      orderId: String(order._id), sellerId: String(order.sellerId), status: order.status,
-      paymentStatus: order.paymentStatus, total: order.total, currency: order.currency,
-      shippedAt: order.shippedAt, receivedAt: order.receivedAt,
-      paymentReviewHold: order.paymentReviewHold, paymentReviewReason: order.paymentReviewReason,
-    })),
-    events: events.map((event) => ({
-      eventId: String(event._id), source: event.source, providerRequestId: event.providerRequestId || null,
-      providerResponseId: event.providerResponseId || null, merchantReference: event.merchantReference,
-      providerTransactionNo: event.providerTransactionNo, signatureStatus: event.signatureStatus,
-      merchantMatched: event.merchantMatched, referenceMatched: event.referenceMatched,
-      amountMatched: event.amountMatched, expectedAmount: event.expectedAmount,
-      receivedAmount: event.receivedAmount, responseCode: event.responseCode,
-      transactionStatus: event.transactionStatus, decision: event.decision,
-      reasonCode: event.reasonCode, receivedAt: event.receivedAt,
-    })),
-  }, 200, { serverNow: new Date().toISOString() });
-});
-
-router.post("/checkouts/:id/payment-attempts", ...buyerOnly, async (req, res) => {
-  checkId(req.params.id);
-  emptyBody(req);
-  const idempotencyKey = readIdempotencyKey(req);
-  const result = await createPaymentAttempt({
-    checkoutId: req.params.id,
-    buyerId: req.user._id,
-    idempotencyKey,
-    idempotencyFingerprint: fingerprint({ operation: "VNPAY_ATTEMPT", checkoutId: req.params.id }),
-    ipAddress: req.ip || req.socket.remoteAddress,
-    requestId: req.requestId,
-  });
-  return success(req, res, {
-    attemptId: String(result.attempt._id),
-    status: result.attempt.status,
-    paymentUrl: result.attempt.paymentUrl,
-    expiresAt: result.attempt.expiresAt,
-    canRedirect: Boolean(result.attempt.paymentUrl && result.attempt.status === "PENDING" && result.attempt.expiresAt > new Date()),
-  }, result.reused ? 200 : 201, {
-    idempotentReplay: result.reused,
-    serverNow: new Date().toISOString(),
-  });
-});
-
-router.post("/checkouts/:id/cancel", ...buyerOnly, async (req, res) => {
-  checkId(req.params.id);
-  emptyBody(req);
-  readIdempotencyKey(req);
-  const checkout = await cancelVnpayCheckout({
-    checkoutId: req.params.id,
-    buyerId: req.user._id,
-    requestId: req.requestId,
-  });
-  const orders = await Order.find({ checkoutId: checkout._id }).sort({ sellerId: 1 });
-  return success(req, res, checkoutDTO(checkout, orders), 200, { serverNow: new Date().toISOString() });
 });
 
 router.post("/checkouts/:id/confirm", ...buyerOnly, async (req, res) => {
@@ -693,7 +573,7 @@ router.post("/checkouts/:id/confirm", ...buyerOnly, async (req, res) => {
   throw problem(410, "ENDPOINT_RETIRED", "Checkout được xác nhận khi tạo; không nhận lệnh confirm từ client.");
 });
 
-router.get("/me/orders", requireAuth, async (req, res) => {
+router.get("/me/orders", requireAuth, requireBuyerSellerAccess, async (req, res) => {
   const perspective = req.query.perspective ?? "buying";
   if (!["buying", "selling"].includes(perspective)) {
     throw problem(422, "VALIDATION_ERROR", "perspective phải là buying hoặc selling.");
@@ -713,7 +593,7 @@ router.get("/me/orders", requireAuth, async (req, res) => {
   });
 });
 
-router.get("/me/sales", requireAuth, async (req, res) => {
+router.get("/me/sales", requireAuth, requireBuyerSellerAccess, async (req, res) => {
   const page = readPagination(req.query, ["status", "page", "limit"], orderStatuses);
   if (!page) throw problem(422, "VALIDATION_ERROR", "Bộ lọc hoặc phân trang không hợp lệ.");
   const filter = { sellerId: req.user._id, ...(page.status ? { status: page.status } : {}) };
@@ -726,7 +606,7 @@ router.get("/me/sales", requireAuth, async (req, res) => {
   });
 });
 
-router.get("/orders/:id", requireAuth, async (req, res) => {
+router.get("/orders/:id", requireAuth, requireBuyerSellerAccess, async (req, res) => {
   checkId(req.params.id);
   const order = await Order.findOne({
     _id: req.params.id,
@@ -735,6 +615,68 @@ router.get("/orders/:id", requireAuth, async (req, res) => {
   if (!order) throw problem(404, "NOT_FOUND", "Không tìm thấy đơn hàng.");
   const [data] = await orderDTOs([order], req.user._id);
   return success(req, res, data, 200, { serverNow: new Date().toISOString() });
+});
+
+router.post("/orders/:id/complaints", ...buyerOnly, async (req, res) => {
+  if (!validId(req.params.id)) throw problem(404, "NOT_FOUND", "Không tìm thấy đơn hàng.");
+  const input = readComplaintInput(req.body);
+  if (!input) throw problem(422, "VALIDATION_ERROR", "Dữ liệu khiếu nại không hợp lệ.");
+  const idempotencyKey = readIdempotencyKey(req);
+  let result;
+  try {
+    result = await createComplaint({
+      orderId: req.params.id,
+      buyerId: req.user._id,
+      requestId: req.requestId,
+      idempotencyKey,
+      input,
+    });
+  } catch (error) {
+    if (error.retryAfter) res.set("Retry-After", String(error.retryAfter));
+    throw error;
+  }
+  return success(req, res, result.receipt, result.reused ? 200 : 201, {
+    idempotentReplay: result.reused,
+  });
+});
+
+router.get("/orders/:id/complaints", ...buyerOnly, async (req, res) => {
+  if (!validId(req.params.id)) throw problem(404, "NOT_FOUND", "Không tìm thấy đơn hàng.");
+  const page = readPagination(
+    req.query,
+    ["type", "status", "page", "limit"],
+    ["OPEN", "IN_REVIEW", "CLOSED"],
+  );
+  if (!page || (req.query.type !== undefined && !["DELIVERY", "ITEM"].includes(req.query.type))) {
+    throw problem(422, "VALIDATION_ERROR", "Bộ lọc hoặc phân trang không hợp lệ.");
+  }
+  const result = await listBuyerComplaints({
+    orderId: req.params.id,
+    buyerId: req.user._id,
+    page: page.page,
+    limit: page.limit,
+    type: req.query.type,
+    status: page.status,
+  });
+  res.set("Cache-Control", "private, no-store");
+  return success(req, res, result.items, 200, {
+    page: page.page,
+    limit: page.limit,
+    total: result.total,
+  });
+});
+
+router.get("/orders/:id/complaints/:complaintId", ...buyerOnly, async (req, res) => {
+  if (!validId(req.params.id) || !validId(req.params.complaintId)) {
+    throw problem(404, "NOT_FOUND", "Không tìm thấy khiếu nại.");
+  }
+  const data = await getBuyerComplaint({
+    orderId: req.params.id,
+    complaintId: req.params.complaintId,
+    buyerId: req.user._id,
+  });
+  res.set("Cache-Control", "private, no-store");
+  return success(req, res, data);
 });
 
 router.post("/orders/:id/cancel", ...buyerOnly, async (req, res) => {
@@ -764,7 +706,9 @@ router.put("/orders/:id/shipment", ...buyerOnly, async (req, res) => {
   const carrierName = body.carrierName.trim();
   const trackingCode = body.trackingCode.trim();
   if (carrierName.length < 2 || carrierName.length > 100 ||
-      trackingCode.length < 3 || trackingCode.length > 100 || /[\u0000-\u001f]/.test(trackingCode)) {
+      trackingCode.length < 3 || trackingCode.length > 100 ||
+      /[\u0000-\u001f\u007f-\u009f]/.test(carrierName) ||
+      /[\u0000-\u001f\u007f-\u009f]/.test(trackingCode)) {
     throw problem(422, "VALIDATION_ERROR", "Tên đơn vị vận chuyển hoặc mã vận đơn không hợp lệ.");
   }
   const result = await markOrderShipped({

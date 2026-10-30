@@ -48,6 +48,8 @@ const caseSchema = new mongoose.Schema(
     assignedSupportId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     assignmentHistory: { type: [assignmentSchema], default: [] },
     evidenceMediaIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "Media" }],
+    contentRedacted: { type: Boolean, default: false },
+    contentRedactedAt: { type: Date, default: null },
     outcomeCode: {
       type: String,
       enum: ["", "NO_ACTION", "CORRECTION_REQUIRED", "LISTING_HIDDEN", "RESOLVED", "UNRESOLVED", "OTHER"],

@@ -176,3 +176,9 @@ Active Order Case chặn giao/nhận/thu/hủy và bắt đầu hoặc chấp nh
 Ghi Case và mutation giao/nhận/COD phải chia sẻ điểm ghi có điều kiện trên Order để tránh race giữa snapshot đọc ở các document khác nhau. Audit/notification mutation nằm trong transaction; đọc PII audit lỗi thì không trả dữ liệu. Replay kiểm tra lại quyền và không nhân tác dụng phụ.
 
 Giữ worker VNPAY độc lập, lease/checkpoint bền vững và giới hạn QueryDr hiện có; không giả thất bại khi tắt tích hợp/timeout. Heartbeat worker riêng API readiness, kiểm tra restart/đa worker và retention chạy lại an toàn ở các bước I–L.
+
+## Retention hồ sơ Case — trạng thái 31/10/2026
+
+`backend/src/jobs/caseRetention.js` và `npm run retention:cases` mặc định chỉ dry-run, dùng mốc 12 tháng lịch UTC sau `closedAt`, giới hạn 100 Case/tệp mỗi lượt. `--apply` ẩn danh nội dung Case/Report/Complaint, giữ receipt/tombstone, scrubs ghi chú tự do liên quan và xóa tệp `CASE_EVIDENCE` chỉ khi không có tham chiếu từ Listing, Order hay hồ sơ khác. Tệp được đánh dấu `RETENTION_PENDING` trước khi xóa; nếu I/O lỗi, lượt sau có thể retry và media API không phục vụ tệp đang chờ.
+
+Test isolated replica set chứng minh dry-run không ghi, hồ sơ cũ được ẩn danh, Case còn mở và hồ sơ chưa đủ 12 tháng không đổi, media dùng chung được giữ, media riêng được xóa và chạy lại không nhân audit. Dry-run MongoDB dự án hiện không có Case nào đủ hạn. Job chưa được lên lịch tự động; cần backup, lịch chạy, giám sát lỗi và nghiệm thu vận hành trước khi áp dụng trên môi trường thật. Xem [runbook backend](../runbooks/backend-fulfillment-operations.md).

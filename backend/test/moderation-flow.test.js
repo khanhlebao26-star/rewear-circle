@@ -146,7 +146,7 @@ test("listing reports group into a Case and close atomically notifies reporters"
     assert.equal(closed.response.status, 200);
     assert.equal((await Listing.findById(listing._id)).correctionRequested, true);
     assert.equal((await Case.findById(first.data.data.caseId)).status, "CLOSED");
-    assert.equal(await AuditEvent.countDocuments({ caseId: first.data.data.caseId }), 5);
+    assert.equal(await AuditEvent.countDocuments({ caseId: first.data.data.caseId }), 6);
 
     const reporterNotifications = await request("/me/notifications", { user: reporter });
     const secondNotifications = await request("/me/notifications", { user: secondReporter });

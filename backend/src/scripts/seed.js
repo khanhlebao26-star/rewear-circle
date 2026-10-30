@@ -114,7 +114,7 @@ async function main() {
   ];
 
   for (const [index, row] of rows.entries()) {
-    const [key, seller, title, price, approved, sold] = row;
+    const [, seller, title, price, approved, sold] = row;
     const versionId = id("4", index + 1);
 
     await Listing.updateOne(
@@ -151,7 +151,6 @@ async function main() {
       { upsert: true, runValidators: true },
     );
 
-    console.log(key, String(id("2", index + 1)), seller, price);
   }
 
   for (const key of ["buyer1", "buyer2"]) {
@@ -167,18 +166,19 @@ async function main() {
     );
   }
 
-  console.table(
-    accounts.map(([key]) => ({
-      email: `${key}@rewear.local`,
-      password,
-      userId: String(users[key]._id),
-    })),
-  );
+  console.log(JSON.stringify({ event: "seed_completed", level: "info", userCount: accounts.length, listingCount: rows.length }));
 }
 
 main()
   .catch((error) => {
-    console.error(error);
+    console.error(JSON.stringify({
+      event: "seed_failed",
+      level: "error",
+      errorType: error.name || "Error",
+      errorCode: typeof error.code === "string" && /^[A-Z0-9_]{1,64}$/.test(error.code)
+        ? error.code
+        : "SEED_FAILED",
+    }));
     process.exitCode = 1;
   })
   .finally(() => mongoose.disconnect());

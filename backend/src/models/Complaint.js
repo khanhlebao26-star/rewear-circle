@@ -55,6 +55,8 @@ const complaintSchema = new mongoose.Schema(
       immutable: true,
     },
     details: { type: String, required: true, minlength: 10, maxlength: 2000, trim: true, immutable: true },
+    contentRedacted: { type: Boolean, default: false },
+    contentRedactedAt: { type: Date, default: null },
     affectedOrderItemIds: {
       type: [{ type: mongoose.Schema.Types.ObjectId }],
       default: [],
@@ -100,6 +102,8 @@ const complaintSchema = new mongoose.Schema(
 );
 
 complaintSchema.pre("validate", function validateComplaint() {
+  if (this.contentRedacted) return;
+
   const reasons = this.type === "DELIVERY" ? deliveryReasons : itemReasons;
   if (!reasons.includes(this.reasonCode)) {
     this.invalidate("reasonCode", "The reason code is not valid for this complaint type.");

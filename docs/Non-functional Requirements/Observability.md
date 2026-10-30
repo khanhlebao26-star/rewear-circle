@@ -120,6 +120,12 @@ Cần thực hiện ít nhất bốn tình huống kiểm thử sau:
 - **Nhiều báo cáo cùng một món hàng:** Xác nhận các báo cáo được liên kết đúng vụ việc nhưng vẫn giữ riêng người gửi, lý do và bằng chứng.
 **Tiêu chí đạt:** Với các mã định danh liên quan, có thể giải thích được ai đã thực hiện hành động gì, vào thời điểm nào và hệ thống đã xử lý ra sao. Quá trình điều tra không được làm lộ dữ liệu nhạy cảm.
 
+## **Trạng thái triển khai hiện tại — 31/10/2026**
+
+API ghi JSON một dòng gồm requestId, method, route template, statusCode, durationMs và mã lỗi chuẩn hóa. Không log query string, body, header, cookie, stack hoặc object Error. Startup, seed, audit/migration và worker cũng dùng field allowlist; seed không in mật khẩu demo. Worker VNPAY có workerId/runId, heartbeat độc lập và số cycle lỗi liên tiếp.
+
+Các bài test hiện chỉ xác nhận format request log và loại bỏ query string, chưa quét mọi đường log bằng DLP hoặc cấu hình hệ thống log bên ngoài. Repo chưa cấu hình log rotation 30 ngày, cảnh báo/metrics hoặc schedule retention. VNPAY runtime đang tắt nên heartbeat của worker không phải bằng chứng worker đang chạy trong môi trường ứng dụng.
+
 ## **6. Tài liệu tham khảo**
 
 OWASP Logging Cheat Sheet:[ ](<https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html>)[https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html](<https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html>)

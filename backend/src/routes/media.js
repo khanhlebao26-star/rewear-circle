@@ -241,6 +241,9 @@ router.get("/media/:id", async (req, res) => {
 
   const media = await Media.findById(req.params.id);
   if (!media) return fail(req, res, 404, "NOT_FOUND", "Không tìm thấy ảnh.");
+  if (media.purpose === "RETENTION_PENDING") {
+    return fail(req, res, 404, "NOT_FOUND", "Không tìm thấy ảnh.");
+  }
 
   const user = req.session.userId
     ? await User.findById(req.session.userId)

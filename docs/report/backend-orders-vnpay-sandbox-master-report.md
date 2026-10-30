@@ -146,11 +146,13 @@ PAY-02 trả `paymentMethod`, `attemptId=null`, `paymentStatus`, tổng gốc `a
 
 #### Nhận hàng, hủy và hoàn về
 
+**Làm rõ hợp đồng 29/10/2026:** [Bước A giao nhận/khiếu nại](backend-fulfillment-operations-master-report.md) chốt active Order Case chặn giao/nhận/thu/hủy và bắt đầu hoặc chấp nhận hoàn COD. Mở/đóng DELIVERY không tự chuyển Order NEEDS_REVIEW hoặc khôi phục CONFIRMED; trạng thái này chỉ do workflow tài chính/COD return riêng. Ngoại lệ DELIVERY cho COD return OPEN/REJECTED theo ma trận báo cáo mới; đây là hợp đồng đích, chưa triển khai API khiếu nại.
+
 `canFulfill=true` khi Order COD CONFIRMED không có hold hoặc Order VNPAY PAID không có hold. Buyer xác nhận nhận hàng COD sau shippedAt chuyển Order CONFIRMED → COMPLETED; xác nhận nhận hàng không tự xác nhận Seller đã thu tiền. Seller ghi nhận thu tiền không tự làm Order COMPLETED. Courier có thể báo/đối soát thu tiền sau khi Buyer đã nhận, nên COMPLETED với UNPAID được hiển thị là “đã nhận hàng, chờ Seller ghi nhận thu tiền”, không tự tạo bằng chứng đã trả.
 
 Buyer được hủy từng Order COD trước shippedAt, khi chưa có bản ghi thu, Order CONFIRMED và không bị hold. Hủy nguyên tử cập nhật CANCELLED/NOT_DUE và trả món về AVAILABLE chỉ khi quyền SOLD còn đúng Checkout/Order và không có reservation/quyền nhận khác. Cờ ẩn/duyệt/hold khác được giữ; AVAILABLE không đồng nghĩa lập tức công khai. Hủy và gửi hàng/thu tiền phải dùng cập nhật có điều kiện để chỉ một thao tác thắng. Seller không có quyền tự hủy thay Buyer. VNPAY tiếp tục dùng hủy Checkout trước attempt.
 
-Sau khi đã gửi, Buyer không tự hủy. Không nhận hàng, mất hàng hoặc hoàn chưa về đều đưa vào xử lý giao nhận/DELIVERY, Order NEEDS_REVIEW, Listing vẫn SOLD; không tự mở bán khi hết giờ hoặc khi chỉ có lời báo “Buyer không nhận”.
+Sau khi đã gửi, Buyer không tự hủy. Không nhận hàng, mất hàng hoặc hoàn chưa về được điều tra qua workflow phù hợp; mở DELIVERY không tự đổi Order. Chỉ workflow COD return/tài chính riêng có thể chuyển NEEDS_REVIEW; Listing vẫn SOLD, không tự mở bán khi hết giờ hoặc chỉ có lời báo “Buyer không nhận”.
 
 Seller có thể gửi yêu cầu xác nhận đã nhận lại **toàn bộ** hàng của Order COD, bắt buộc lý do và mã vận đơn đang lưu; Order phải đã gửi, chưa COMPLETED và chưa COLLECTED. Yêu cầu làm Order NEEDS_REVIEW. Admin xử lý bằng quyết định có lý do, kiểm tra hồ sơ giao nhận/đối chiếu thủ công và việc hàng đã về, chưa thu tiền. Chấp nhận nguyên tử chuyển Order RETURNED/NOT_DUE và giải phóng đúng quyền nhận khi không còn xung đột; từ chối giữ NEEDS_REVIEW. Thiếu hàng, đã thu tiền, Buyer khai đã nhận hoặc dữ liệu mâu thuẫn thì giữ điều tra, không tự hoàn tiền/mở bán. Đây là xác nhận nghiệp vụ thủ công có audit, không phải xác minh hãng vận chuyển.
 
@@ -441,3 +443,12 @@ Tích hợp cover attempt/idempotency, nhiều Seller, snapshot/địa chỉ b�
 - Chưa kết nối MongoDB dự án để xác minh index trên dữ liệu đang chạy hoặc backfill dữ liệu cũ. C vẫn cần backup/dry-run/migrate có kiểm soát.
 - Restart được kiểm tra bằng lease hết hạn được worker khác nhận lại, không bằng việc kill/restart một tiến trình production; cần nghiệm thu vận hành khi triển khai worker thật.
 - Toàn bộ thay đổi trạng thái cần chạy trên MongoDB hỗ trợ transaction/replica set. Không kết luận đã chạy Sandbox hoặc migrate dữ liệu thật từ bộ test này.
+
+## Cập nhật hiện trạng — 31/10/2026
+
+- Theo quyết định tạm dừng tích hợp, API VNPAY đã được gỡ khỏi ứng dụng hiện tại: không mount IPN/Return handler, không nạp cấu hình VNPAY lúc khởi động và Checkout mới chỉ nhận COD. Không chạy worker đối soát; source cũ còn nằm trong mã nhưng không được khởi chạy. PaymentAttempt cũ đang lưu trong DB vẫn giữ `NEEDS_REVIEW` và payment hold.
+- Phần xử lý/kiểm tra tích hợp trước đây còn trong mã nguồn và tài liệu làm tham chiếu; chưa được nghiệm thu như tích hợp đang bật. Bước L và M vẫn **chưa hoàn thành**. Cấu hình local có thể còn trong `.env`; giá trị bí mật không được chép vào báo cáo.
+- Audit chỉ đọc mới nhất thấy 1 Checkout VNPAY `NEEDS_REVIEW`, 2 Order `NEEDS_REVIEW`, 1 PaymentAttempt `NEEDS_REVIEW` và hai Query PaymentEvent: một `INVALID_QUERY_SIGNATURE`, một `QUERYDR_UNRESOLVED_AFTER_FINAL_CHECKPOINT`. Hai Listing liên quan vẫn RESERVED có payment review hold. Không có IPN thành công đã xác minh; không chuyển các hồ sơ sang PAID/FAILED/EXPIRED hoặc giải phóng món từ bằng chứng này.
+- Giao diện SIT do người dùng cung cấp trả 403 ở tìm kiếm; trang danh sách giao dịch và danh sách đã test không hiện giao dịch. Đây là giới hạn phiên/quyền tra cứu SIT, chưa phải kết luận lỗi backend. Cần quyền tra cứu merchant hợp lệ và một giao dịch Sandbox được provider xác nhận để nghiệm thu luồng thật. Return URL không xác nhận thanh toán.
+- Phần F–K ở mục 14 ghi kết quả của bộ kiểm thử tích hợp trước lần tắt VNPAY. Bộ hồi quy hiện tại chỉ chạy 4 protocol fixtures PAY/IPN/QueryDr; không có giao dịch Sandbox thật và không chạy VNPAY reconciliation integration. Không dùng kết quả fixture cũ hoặc hiện tại thay cho bằng chứng provider.
+- Audit, migration dry-run và retention dry-run trên DB dự án mới nhất đều có `writesPerformed: 0`, migration candidates/eligible bằng 0 và retention eligible cases bằng 0. Bộ test ứng dụng dùng database `_test` tách biệt; không đổi dữ liệu nghiệp vụ của DB dự án. Không tạo backup mới vì không áp dụng ghi dữ liệu/index.

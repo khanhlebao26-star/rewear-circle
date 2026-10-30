@@ -631,7 +631,7 @@ Body {reason} dài 10–500 ký tự, từ chối email/số điện thoại hi�
 - **Route:** /orders/{orderId}/complaints và /orders/{orderId}/complaints/{complaintId}
 - **Quyền:** Buyer sở hữu Order và bản gốc
 
-List có page/limit/type/status; detail chỉ trả bản gửi của mình, status Case và outcome công khai sau đóng. Không internalNote/assignment/dữ liệu điều tra của người khác. Nội dung đã retention trả 410 CONTENT_REDACTED khi cơ chế retention được triển khai. Hai route Buyer đã triển khai ở Bước E.
+List có page/limit/type/status; detail chỉ trả bản gửi của mình, status Case và outcome công khai sau đóng. Không internalNote/assignment/dữ liệu điều tra của người khác. Retention đánh dấu nội dung đã ẩn danh thì detail trả 410 CONTENT_REDACTED; danh sách vẫn trả receipt tối thiểu. Hai route Buyer đã triển khai ở Bước E.
 
 Hợp đồng đầy đủ request/DTO/lỗi/idempotency/audit và ma trận cạnh tranh: [báo cáo giao nhận, khiếu nại và vận hành](../report/backend-fulfillment-operations-master-report.md), mục 3–12 và 19–20. MOD-04 đọc chi tiết Admin REPORT và Order Case triển khai ở C; MOD-02/MOD-10 ở E; MOD-03, assignment và quyết định ở F; MOD-07–09 Support/contact ở G; quyền ảnh theo Case và DTO notification ở H. Regression tổng còn ở L.
 

@@ -126,7 +126,7 @@ async function assertComplaintAllowed(order, input, session) {
 }
 
 async function consumeBuyerQuota(buyerId, now, session) {
-  let quota = await queryInSession(ComplaintQuota.findOne({ buyerId }), session);
+  let quota = await ComplaintQuota.findOne({ buyerId }).session(session);
   if (!quota) quota = new ComplaintQuota({ buyerId, recentSubmissions: [] });
 
   quota.recentSubmissions = quota.recentSubmissions.filter(
@@ -348,6 +348,7 @@ async function listBuyerComplaints({ orderId, buyerId, page, limit, type, status
 async function getBuyerComplaint({ orderId, complaintId, buyerId }) {
   const complaint = await Complaint.findOne({ _id: complaintId, orderId, buyerId }).lean();
   if (!complaint) throw problem(404, "NOT_FOUND", "Không tìm thấy khiếu nại.");
+  if (complaint.contentRedacted) throw problem(410, "CONTENT_REDACTED", "Nội dung khiếu nại đã được lưu trữ.");
   const caseRecord = await Case.findById(complaint.caseId).select("status outcomeCode outcomeSummary closedAt").lean();
   if (!caseRecord) throw new Error("Complaint references a missing Case.");
   return {

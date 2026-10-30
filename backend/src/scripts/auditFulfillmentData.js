@@ -271,7 +271,14 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error("Fulfillment data audit failed:", error.name || "UNKNOWN_ERROR");
+  console.error(JSON.stringify({
+    event: "fulfillment_data_audit_failed",
+    level: "error",
+    errorType: error.name || "Error",
+    errorCode: typeof error.code === "string" && /^[A-Z0-9_]{1,64}$/.test(error.code)
+      ? error.code
+      : "AUDIT_FAILED",
+  }));
   process.exitCode = 1;
 }).finally(async () => {
   if (mongoose.connection.readyState !== 0) await mongoose.disconnect();

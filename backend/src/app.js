@@ -2,8 +2,8 @@ const express = require("express");
 const mongoose = require("mongoose");
 const session = require("express-session");
 const MongoStore = require("connect-mongo").default;
-const { randomUUID } = require("node:crypto");
 const { success, failure } = require("./http/responses");
+const requestLogger = require("./http/requestLogger");
 
 const app = express();
 
@@ -11,11 +11,7 @@ if (process.env.NODE_ENV === "production") {
   app.set("trust proxy", 1);
 }
 
-app.use((req, res, next) => {
-  req.requestId = randomUUID();
-  res.setHeader("X-Request-Id", req.requestId);
-  next();
-});
+app.use(requestLogger);
 
 app.use(express.json({ limit: "1mb" }));
 
@@ -68,14 +64,16 @@ app.use((req, res) => {
 app.use((err, req, res, next) => {
   if (res.headersSent) return next(err);
 
-  console.error(req.requestId, err);
   const status = Number.isInteger(err.status) ? err.status : 500;
+  req.errorCode = typeof err.code === "string" && /^[A-Z0-9_]{1,64}$/.test(err.code)
+    ? err.code
+    : status === 500 ? "INTERNAL_ERROR" : "REQUEST_ERROR";
 
   return failure(
     req,
     res,
     status,
-    err.code || "INTERNAL_ERROR",
+    req.errorCode,
     status === 500 ? "Lỗi máy chủ." : err.message,
   );
 });
