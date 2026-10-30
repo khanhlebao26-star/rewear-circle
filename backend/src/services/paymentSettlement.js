@@ -44,13 +44,15 @@ async function markPaymentReview({ session, checkoutIds, listingIds, reason, req
     }, { session });
     await Order.updateMany({ checkoutId: { $in: existingCheckoutIds } }, {
       $set: { paymentReviewHold: true, paymentReviewReason: reason },
+      $inc: { __v: 1 },
     }, { session });
     await Order.updateMany({
       checkoutId: { $in: existingCheckoutIds },
       status: { $in: ["PENDING", "PAID", "CONFIRMED"] },
-    }, { $set: { status: "NEEDS_REVIEW" } }, { session });
+    }, { $set: { status: "NEEDS_REVIEW" }, $inc: { __v: 1 } }, { session });
     await Order.updateMany({ checkoutId: { $in: existingCheckoutIds }, paymentMethod: "VNPAY" }, {
       $set: { paymentStatus: "NEEDS_REVIEW" },
+      $inc: { __v: 1 },
     }, { session });
   }
 
@@ -71,11 +73,12 @@ async function markPaymentReview({ session, checkoutIds, listingIds, reason, req
       await Checkout.updateMany({ _id: { $in: otherCheckouts } }, { $set: { status: "NEEDS_REVIEW" } }, { session });
       await Order.updateMany({ checkoutId: { $in: otherCheckouts } }, {
         $set: { paymentReviewHold: true, paymentReviewReason: reason },
+        $inc: { __v: 1 },
       }, { session });
       await Order.updateMany({
         checkoutId: { $in: otherCheckouts },
         status: { $in: ["PENDING", "PAID", "CONFIRMED"] },
-      }, { $set: { status: "NEEDS_REVIEW" } }, { session });
+      }, { $set: { status: "NEEDS_REVIEW" }, $inc: { __v: 1 } }, { session });
     }
   }
 
@@ -312,6 +315,7 @@ async function settleVerifiedResult(input) {
           }, { session });
           await Order.updateMany({ checkoutId: checkout._id }, {
             $set: { status: "PAID", paymentStatus: "PAID", paymentReviewHold: false, paymentReviewReason: "" },
+            $inc: { __v: 1 },
           }, { session });
           decision = "APPLIED";
           reasonCode = "PAYMENT_SUCCESS";
@@ -421,6 +425,7 @@ async function settleVerifiedResult(input) {
           }, { session });
           await Order.updateMany({ checkoutId: checkout._id }, {
             $set: { status: resultType === "EXPIRED" ? "EXPIRED" : "PAYMENT_FAILED", paymentStatus: resultType === "EXPIRED" ? "EXPIRED" : "PAYMENT_FAILED" },
+            $inc: { __v: 1 },
           }, { session });
           decision = "APPLIED";
           reasonCode = resultType === "EXPIRED" ? "PAYMENT_EXPIRED" : "PAYMENT_FAILED";

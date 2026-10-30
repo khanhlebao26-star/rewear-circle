@@ -60,7 +60,6 @@ app.use("/api/v1", require("./routes/media"));
 app.use("/api/v1", require("./routes/listings"));
 app.use("/api/v1", require("./routes/moderation"));
 app.use("/api/v1", require("./routes/commerce"));
-app.use("/api/v1", require("./routes/vnpay"));
 
 app.use((req, res) => {
   return failure(req, res, 404, "NOT_FOUND", "Không tìm thấy.");

@@ -1,11 +1,9 @@
 const mongoose = require("mongoose");
 const Listing = require("../models/Listing");
 const AuditEvent = require("../models/AuditEvent");
-const { Cart, Checkout, Order, PaymentAttempt } = require("../models/commerce");
+const { Cart, Checkout, Order } = require("../models/commerce");
 const { problem, approvedVersion, approvedVisibleListingQuery, snapshot } = require("../domain/commerceRules");
 const { assertSameFingerprint } = require("../domain/idempotency");
-
-const HOLD_MS = 15 * 60 * 1000;
 
 function mapItemsBySeller(items) {
   const grouped = new Map();
@@ -35,6 +33,9 @@ async function createCheckout({
   paymentMethod,
   requestId,
 }) {
+  if (paymentMethod !== "COD") {
+    throw problem(422, "PAYMENT_METHOD_UNAVAILABLE", "Hiện chỉ hỗ trợ thanh toán khi nhận hàng (COD).");
+  }
   const existing = await findIdempotentCheckout(buyerId, requestKey, idempotencyFingerprint);
   if (existing) return { checkout: existing, orders: await Order.find({ checkoutId: existing._id }), reused: true };
 
@@ -57,9 +58,7 @@ async function createCheckout({
 
       const checkoutId = new mongoose.Types.ObjectId();
       const createdAt = new Date();
-      const expiresAt = paymentMethod === "VNPAY"
-        ? new Date(createdAt.getTime() + HOLD_MS)
-        : null;
+      const expiresAt = null;
       const snapshots = [];
 
       for (const item of requestedItems) {
@@ -83,16 +82,10 @@ async function createCheckout({
           throw problem(409, "LISTING_UNAVAILABLE", "Tin có giá không hợp lệ để mua.");
         }
 
-        const state = paymentMethod === "VNPAY" ? "RESERVED" : "SOLD";
-        const update = paymentMethod === "VNPAY"
-          ? {
-              $set: { saleStatus: state, reservedCheckoutId: checkoutId, reservedUntil: expiresAt, soldCheckoutId: null },
-              $inc: { __v: 1 },
-            }
-          : {
-              $set: { saleStatus: state, reservedCheckoutId: null, reservedUntil: null, soldCheckoutId: checkoutId },
-              $inc: { __v: 1 },
-            };
+        const update = {
+          $set: { saleStatus: "SOLD", reservedCheckoutId: null, reservedUntil: null, soldCheckoutId: checkoutId },
+          $inc: { __v: 1 },
+        };
         const claimed = await Listing.findOneAndUpdate(
           approvedVisibleListingQuery({
             _id: item.listingId,
@@ -120,7 +113,6 @@ async function createCheckout({
       if (!Number.isSafeInteger(subtotal)) {
         throw problem(422, "INVALID_TOTAL", "Tổng tiền vượt giới hạn hỗ trợ.");
       }
-      const isCod = paymentMethod === "COD";
       const [checkout] = await Checkout.create(
         [{
           _id: checkoutId,
@@ -130,18 +122,16 @@ async function createCheckout({
           contractVersion: 2,
           items: snapshots,
           paymentMethod,
-          paymentStatus: isCod ? "UNPAID" : "PENDING",
+          paymentStatus: "UNPAID",
           subtotal,
           shippingFee: 0,
           total: subtotal,
-          ...(isCod ? {
-            collectibleAmount: subtotal,
-            collectedAmount: 0,
-            outstandingAmount: subtotal,
-          } : {}),
+          collectibleAmount: subtotal,
+          collectedAmount: 0,
+          outstandingAmount: subtotal,
           shippingAddress,
           expiresAt,
-          status: isCod ? "CONFIRMED" : "PENDING_PAYMENT",
+          status: "CONFIRMED",
           createdAt,
         }],
         { session },
@@ -162,8 +152,8 @@ async function createCheckout({
             total: orderSubtotal,
             contractVersion: 2,
             paymentMethod,
-            paymentStatus: isCod ? "UNPAID" : "PENDING",
-            status: isCod ? "CONFIRMED" : "PENDING",
+            paymentStatus: "UNPAID",
+            status: "CONFIRMED",
           }],
           { session },
         );
@@ -206,94 +196,4 @@ async function createCheckout({
   }
 }
 
-async function cancelVnpayCheckout({ checkoutId, buyerId, requestId }) {
-  return mongoose.connection.transaction(async (session) => {
-    const checkout = await Checkout.findOne({ _id: checkoutId, buyerId }).session(session);
-    if (!checkout) throw problem(404, "NOT_FOUND", "Không tìm thấy checkout.");
-    if (checkout.paymentMethod !== "VNPAY") {
-      throw problem(409, "CHECKOUT_NOT_CANCELLABLE", "COD hủy theo từng Order.");
-    }
-    if (checkout.status === "CANCELLED") return checkout;
-    if (checkout.status !== "PENDING_PAYMENT") {
-      throw problem(409, "CHECKOUT_NOT_CANCELLABLE", "Checkout hiện không thể hủy.");
-    }
-    const now = new Date();
-    if (!checkout.expiresAt || checkout.expiresAt <= now) {
-      throw problem(409, "CHECKOUT_NOT_CANCELLABLE", "Checkout đã hết hạn chờ đối chiếu.");
-    }
-    if (checkout.paymentAttemptId || await PaymentAttempt.exists({ checkoutId }).session(session)) {
-      throw problem(409, "CHECKOUT_NOT_CANCELLABLE", "Checkout đã bắt đầu thanh toán.");
-    }
-
-    const claimed = await Checkout.updateOne(
-      {
-        _id: checkoutId,
-        buyerId,
-        paymentMethod: "VNPAY",
-        status: "PENDING_PAYMENT",
-        paymentAttemptId: null,
-        expiresAt: { $gt: now },
-        __v: checkout.__v,
-      },
-      { $set: { status: "CANCELLED", paymentStatus: "CANCELLED" }, $inc: { __v: 1 } },
-      { session },
-    );
-    if (claimed.modifiedCount !== 1) {
-      throw problem(409, "CHECKOUT_NOT_CANCELLABLE", "Checkout vừa được cập nhật hoặc bắt đầu thanh toán.");
-    }
-
-    const orderIds = await Order.distinct("_id", { checkoutId }).session(session);
-    const cancelledOrders = await Order.updateMany(
-      { checkoutId, paymentMethod: "VNPAY", status: "PENDING" },
-      { $set: { status: "CANCELLED", paymentStatus: "CANCELLED" } },
-      { session },
-    );
-    if (cancelledOrders.modifiedCount !== orderIds.length) {
-      throw problem(409, "CHECKOUT_NOT_CANCELLABLE", "Các đơn liên quan vừa thay đổi.");
-    }
-
-    const released = await Listing.updateMany(
-      {
-        _id: { $in: checkout.items.map((item) => item.listingId) },
-        saleStatus: "RESERVED",
-        reservedCheckoutId: checkout._id,
-      },
-      {
-        $set: { saleStatus: "AVAILABLE", reservedCheckoutId: null, reservedUntil: null },
-        $inc: { __v: 1 },
-      },
-      { session },
-    );
-    if (released.modifiedCount !== checkout.items.length) {
-      throw problem(409, "RESERVATION_CONFLICT", "Không thể giải phóng an toàn toàn bộ món của Checkout.");
-    }
-
-    await AuditEvent.create(
-      [
-        {
-          actorId: buyerId,
-          action: "CHECKOUT_CANCELLED",
-          targetType: "CHECKOUT",
-          targetId: checkout._id,
-          requestId,
-          fromState: "PENDING_PAYMENT",
-          toState: "CANCELLED",
-        },
-        ...orderIds.map((targetId) => ({
-          actorId: buyerId,
-          action: "ORDER_CANCELLED",
-          targetType: "ORDER",
-          targetId,
-          requestId,
-          fromState: "PENDING",
-          toState: "CANCELLED",
-        })),
-      ],
-      { session, ordered: true },
-    );
-
-    return Checkout.findById(checkoutId).session(session);
-  });
-}
-
-module.exports = { createCheckout, cancelVnpayCheckout };
+module.exports = { createCheckout };
