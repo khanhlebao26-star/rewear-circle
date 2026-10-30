@@ -7,8 +7,6 @@ async function main() {
     }
   }
 
-  require("./config/vnpay")();
-
   await mongoose.connect(process.env.MONGODB_URI);
 
   const app = require("./app");
