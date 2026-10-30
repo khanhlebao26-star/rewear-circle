@@ -112,6 +112,16 @@ Buyer xác nhận “Đã nhận” trên đơn sau khi Seller tự đặt vận
 
 Cập nhật 26/10/2026
 
-Buyer nhập thông tin nhận lúc checkout, theo dõi mỗi Order và xác nhận Đã nhận. Khi PAID nhưng chưa gửi/chưa đến, Buyer có thể mở DELIVERY case; sau COMPLETED có thể mở ITEM case cho món bị ảnh hưởng.
+Buyer nhập thông tin nhận lúc checkout, theo dõi mỗi Order và xác nhận Đã nhận. Buyer mở DELIVERY trước nhận theo ma trận VNPAY/COD; ITEM sau COMPLETED cho món thuộc chính Order. Ngoại lệ COD đang yêu cầu hoàn theo hợp đồng 29/10/2026.
 
 Seller chịu phí vận chuyển trong giá niêm yết, tự đặt giao hàng và nhập hãng/mã vận đơn cho Order của mình. Support chỉ xem vụ được giao; role SUPPORT không tự cấp quyền xem mọi đơn.
+
+## Quyền vụ việc đã chốt — 29/10/2026
+
+Hợp đồng Bước A tại [báo cáo giao nhận, khiếu nại và vận hành](../report/backend-fulfillment-operations-master-report.md). Sau Bước C, các route USER chỉ đọc Order/Checkout theo quan hệ hiện tại; ảnh riêng tư yêu cầu quyền sở hữu hoặc Case phù hợp. Hàng chờ, assignment Admin và API Support/contact vẫn chờ các bước F/G.
+
+Buyer chỉ gửi/theo dõi khiếu nại của chính Order mình; Seller không có quyền xem toàn nội dung khiếu nại hoặc evidence chỉ vì sở hữu Order. Buyer cần chờ Admin đóng DELIVERY đang mở rồi mới xác nhận đã nhận; Admin đóng không tự ghi nhận hàng hoặc thay trạng thái tiền.
+
+Admin xử lý cả REPORT/DELIVERY/ITEM, giao/đổi/gỡ Support trên Case active. Support chỉ đọc OPEN/IN_REVIEW đang được giao, không mutation nghiệp vụ; mất quyền khi đóng/đổi assignment/mất role, kể cả ảnh riêng tư. InternalNote chỉ Admin đọc.
+
+Địa chỉ/liên hệ không nằm trong Case DTO mặc định. Contact-access chỉ cho active Order Case, reason 10–500 ký tự, audit trước response; trả recipient snapshot đúng Order cho lần đọc đó, không cấp quyền đọc dài hạn. Admin có endpoint tương đương với cùng kiểm soát.

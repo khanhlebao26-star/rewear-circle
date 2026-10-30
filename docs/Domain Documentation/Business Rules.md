@@ -177,7 +177,7 @@ Hết 15 phút, tra cứu cổng. Thành công đã xác minh: ghi SUCCESS, PAID
 
 **Phân loại:**Đề xuất-định nghĩa
 
-Người dùng đã đăng nhập có thể báo cáo tin bán có vấn đề trước khi mua. Khi Order PAID nhưng chưa gửi/chưa đến, Buyer có thể mở DELIVERY case; sau COMPLETED có thể mở ITEM case dựa trên thông tin món đã lưu. Báo tin trước mua và khiếu nại đơn (DELIVERY/ITEM) có lý do và bằng chứng riêng.
+Người dùng đã đăng nhập có thể báo cáo tin bán có vấn đề trước khi mua. Buyer mở DELIVERY theo ma trận VNPAY/COD khi chưa nhận; sau COMPLETED mở ITEM cho đúng OrderItem snapshot. Chi tiết theo hợp đồng giao nhận 29/10/2026. Báo tin trước mua và khiếu nại đơn (DELIVERY/ITEM) có lý do và bằng chứng riêng.
 
 ### **BR-TRUST-002 — Kiểm duyệt của quản trị viên**
 
@@ -247,9 +247,9 @@ Cập nhật 26/10/2026
 
 BR-USER-004 — Xác minh email: đăng ký tạo tài khoản chưa xác minh; email chứa mã dùng một lần có hạn. Chỉ sau khi xác minh mới được mua, đăng bán hoặc báo cáo. Gửi lại mã phải giới hạn tần suất; không tiết lộ email có tồn tại hay không.
 
-BR-ORDER-005 — Giao nhận thủ công: Buyer nhập tên, điện thoại và địa chỉ nhận khi checkout. Mỗi Order theo Seller lưu bản chụp thông tin nhận riêng. Seller chịu phí vận chuyển và đã tính vào giá niêm yết; tổng Checkout chỉ cộng giá món. Sau PAID, Seller tự đặt vận chuyển ngoài hệ thống, nhập tên hãng và mã vận đơn cho Order; Buyer xác nhận Đã nhận mới chuyển COMPLETED. Dùng dữ liệu nhận hàng giả khi demo.
+BR-ORDER-005 — Giao nhận thủ công: Buyer nhập tên, điện thoại và địa chỉ nhận khi checkout. Mỗi Order theo Seller lưu bản chụp thông tin nhận riêng. Seller chịu phí vận chuyển và đã tính vào giá niêm yết; tổng Checkout chỉ cộng giá món. Seller tự đặt vận chuyển và ghi hãng/mã vận đơn khi VNPAY PAID/PAID hoặc COD đủ điều kiện; server ghi shippedAt. Buyer xác nhận Đã nhận khi không có active Order Case/hold mới chuyển COMPLETED, không tự xác nhận đã thu COD. Dùng dữ liệu nhận hàng giả khi demo.
 
-BR-TRUST-004 — Khiếu nại giao nhận: Buyer của Order PAID có thể mở vụ DELIVERY khi Seller chưa gửi hoặc hàng chưa đến. Phạm vi là toàn Order, không cần chọn món. Vụ ITEM chỉ gửi sau COMPLETED; affectedOrderItemIds phải gồm ít nhất một OrderItem thuộc chính Order, đối chiếu bản chụp lúc đặt. Cả hai không tự hoàn tiền.
+BR-TRUST-004 — Khiếu nại giao nhận: Buyer mở DELIVERY cho VNPAY PAID/PAID, COD CONFIRMED hợp lệ hoặc ngoại lệ COD đang yêu cầu hoàn theo ma trận đã chốt 29/10/2026. Phạm vi toàn Order, cấm gửi affectedOrderItemIds kể cả mảng rỗng. Vụ ITEM chỉ gửi sau COMPLETED; affectedOrderItemIds phải gồm ít nhất một OrderItem thuộc chính Order, đối chiếu bản chụp lúc đặt. Cả hai không tự hoàn tiền.
 
 BR-PAYMENT-010 — Trạng thái xác minh: Payment FAILED dẫn Checkout PAYMENT_FAILED và mọi Order PENDING của Checkout sang PAYMENT_FAILED; Payment EXPIRED hoặc hết giữ chỗ đã đối chiếu là chưa trả dẫn Checkout EXPIRED và Order EXPIRED. Chỉ giải phóng món khi không còn giao dịch chưa rõ. Kết quả mâu thuẫn/đến muộn theo BR-PAYMENT-009.
 
@@ -267,4 +267,26 @@ COD chốt Checkout/Order CONFIRMED, paymentStatus UNPAID và Listing SOLD ngay 
 
 Một Checkout có thể có nhiều Order COD; Buyer trả từng Seller theo Order.total, không có attempt tổng. Seller của đơn khai báo đã thu đủ tiền sau khi đã gửi; ghi source=SELLER_DECLARATION, amount, thời điểm server và audit, không coi là xác minh của cổng/hãng vận chuyển. Mỗi Order có tối đa một collection hiệu lực; replay không thu hai lần.
 
-Order COD CONFIRMED không hold được giao và Seller được đọc địa chỉ trước khi thu. Buyer xác nhận nhận sau khi gửi chuyển COMPLETED, không tự COLLECTED; Seller ghi nhận thu không tự COMPLETED. Tranh chấp thu/giao giữ NEEDS_REVIEW. DELIVERY áp dụng cả COD CONFIRMED chưa nhận; ITEM vẫn sau COMPLETED. Toàn bộ demo dùng dữ liệu/tiền giả.
+Order COD CONFIRMED không hold được giao và Seller được đọc địa chỉ trước khi thu. Buyer xác nhận nhận sau khi gửi chuyển COMPLETED, không tự COLLECTED; Seller ghi nhận thu không tự COMPLETED. Workflow tài chính/COD return riêng giữ NEEDS_REVIEW khi có xung đột; mở hoặc đóng Case không tự đổi trạng thái đó. DELIVERY áp dụng cả COD CONFIRMED chưa nhận; ITEM vẫn sau COMPLETED. Toàn bộ demo dùng dữ liệu/tiền giả.
+
+## Chốt giao nhận, khiếu nại và quyền vụ việc — 29/10/2026
+
+**Trạng thái:** hợp đồng Bước A; các phần DELIVERY/ITEM, phân công và Support chưa triển khai. Hợp đồng cuối tại [báo cáo giao nhận, khiếu nại và vận hành](../report/backend-fulfillment-operations-master-report.md), mục 2–12.
+
+### BR-TRUST-005 — Case, giới hạn và giao nhận
+
+Mỗi target chỉ có một Case OPEN/IN_REVIEW. Complaint gốc lưu riêng, tối đa 3 bản/active Order Case và 5 bản mới/24 giờ/Buyer; cùng key/payload replay không tiêu quota. Case cùng type được bổ sung; khác type trả conflict. CLOSED không reopen; tạo lại cùng type/Order chờ 24 giờ từ closedAt. Không áp thời hạn mới tính từ receivedAt để nộp ITEM trong MVP.
+
+Active Order Case chặn ghi vận đơn, receipt, thu COD, hủy COD và bắt đầu/chấp nhận hoàn COD. Admin đóng vụ trước khi các bên tiếp tục; đóng không đòi Order COMPLETED nên không tạo vòng phụ thuộc. Đóng/tạo Case không tự đổi Order, paymentStatus, Checkout, quyền món hoặc gỡ payment hold. REJECT_RETURN theo workflow COD riêng không giải phóng món và không tự đóng vụ.
+
+DELIVERY có thể áp dụng COD NEEDS_REVIEW chỉ khi CodReturnRequest đúng Order có trạng thái OPEN/REJECTED, Order đã gửi/chưa nhận/chưa thu, paymentStatus UNPAID và không có xung đột quyền món/tài chính. Case đang mở chặn ACCEPT_RETURN. Các NEEDS_REVIEW khác không tự được phép tạo DELIVERY/ITEM.
+
+### BR-TRUST-006 — Support và thông tin liên hệ
+
+Support chỉ đọc active Case được giao. Đổi/gỡ assignment, mất role hoặc đóng vụ thu hồi quyền ở request tiếp theo, kể cả ảnh evidence/snapshot theo quyền Case. Không có quyền sửa Order/Case, đóng vụ hoặc điều chỉnh tiền. InternalNote chỉ Admin xem.
+
+Contact-access theo lần đọc có reason 10–500 ký tự; chỉ recipient snapshot của Order gắn vụ; audit trước response và không cấp grant dài hạn. Admin dùng endpoint riêng cùng chính sách. REPORT không dùng contact-access địa chỉ nhận. Audit lỗi thì không trả dữ liệu; DTO Case mặc định không có địa chỉ hoặc contact.
+
+### BR-TRUST-007 — Payload và kết quả xử lý
+
+Khiếu nại cần details 10–2000 ký tự, 0–5 ảnh tùy chọn; reason theo loại. ITEM chọn ít nhất một OrderItem thuộc Order, không nhận listingId thay thế. Outcome DELIVERY/ITEM gồm NO_ACTION, RESOLVED, UNRESOLVED, OTHER; không nhận listingAction và không thực hiện refund. Buyer chỉ đọc bản gốc của mình và tóm tắt công khai; không xem dữ liệu điều tra nội bộ.

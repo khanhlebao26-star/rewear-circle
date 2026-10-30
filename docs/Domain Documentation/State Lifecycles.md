@@ -297,7 +297,7 @@ MVP sử dụng một danh sách quản lý Case dành cho Admin, gồm hai nhó
 | **Loại Case** | **Mục đích** | **Thời điểm** |
 | --- | --- | --- |
 | REPORT | Báo cáo Listing có nội dung không phù hợp hoặc vi phạm quy định. | Trước khi mua hoặc trong quá trình Listing còn liên quan đến hoạt động trên nền tảng. |
-| DELIVERY | Khiếu nại về việc Seller chưa gửi hàng hoặc Buyer chưa nhận được hàng. | Sau khi Order được thanh toán, trong quá trình giao nhận. |
+| DELIVERY | Khiếu nại Seller chưa gửi hoặc Buyer chưa nhận. | VNPAY PAID/PAID hoặc COD trước nhận theo ma trận 29/10/2026, gồm ngoại lệ COD return được quy định riêng. |
 | ITEM | Khiếu nại về tình trạng hoặc vấn đề của sản phẩm đã nhận. | Chỉ sau khi Order chuyển sang COMPLETED. |
 
 DELIVERY và ITEM là các loại khiếu nại sau mua. Chúng không tự động thay đổi trạng thái Payment hoặc Order.
@@ -447,3 +447,13 @@ COD không tạo payment attempt, không có expiresAt và không đi vào job V
 ## 11. Trạng thái triển khai F–K — 29/10/2026
 
 Backend tạo một payment attempt VNPAY cho mỗi Checkout, nhận IPN và đối chiếu QueryDr qua cùng transaction settlement. Worker dùng lịch/checkpoint và lease lưu trong DB; timeout, mã 94 và kết quả chưa rõ không mở bán lại. Kết quả SUCCESS đến muộn vẫn được ghi nhận; xung đột quyền nhận chuyển Checkout/Order sang NEEDS_REVIEW và giữ `paymentReviewHold` để chặn bán/giao. K đã chạy trên MongoDB replica set riêng cho test. Giao dịch Sandbox thật, xác minh mapping thực tế và migration DB cũ chưa hoàn tất; xem [báo cáo tổng](../report/backend-orders-vnpay-sandbox-master-report.md).
+
+## Hợp đồng vòng đời giao nhận/Case — 29/10/2026
+
+Bước A đã chốt, chưa chứng nhận các tính năng mới đã triển khai. Nguồn: [báo cáo giao nhận, khiếu nại và vận hành](../report/backend-fulfillment-operations-master-report.md), mục 4, 6 và 7.
+
+- Giữ một active Case/target. Thêm bản gốc cùng loại không đổi type/status; khác loại trả conflict. CLOSED không reopen; tạo vụ mới theo điều kiện hiện tại và cooldown cùng loại 24 giờ.
+- Case OPEN/IN_REVIEW chặn giao/receipt/thu/hủy/bắt đầu hoặc chấp nhận hoàn COD. Admin đóng vụ không cần Order COMPLETED; đóng vụ chỉ thu hồi ràng buộc hỗ trợ, không tự gỡ hold tài chính hoặc hoàn tất đơn.
+- Shipment chỉ ghi lần đầu hãng/mã và shippedAt, không thêm Order status SHIPPED. VNPAY giao/nhận cần PAID/PAID; COD CONFIRMED đủ điều kiện theo ma trận. Buyer xác nhận sau gửi chuyển COMPLETED, giữ nguyên paymentStatus COD.
+- DELIVERY cho COD NEEDS_REVIEW chỉ áp dụng nhánh yêu cầu hoàn đúng Order OPEN/REJECTED, UNPAID/chưa thu/chưa nhận và quyền món an toàn. Case chặn ACCEPT_RETURN; đóng Case không tự khôi phục CONFIRMED hoặc tạo quyền nhận hàng.
+- Assignment chỉ active Case, không tự IN_REVIEW. Support mất quyền qua Case khi CLOSED hoặc mất assignment/role; Admin đọc hồ sơ trong thời hạn lưu. Outcome Order Case không có hành động tài chính/Listing.

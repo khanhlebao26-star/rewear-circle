@@ -8,7 +8,12 @@ const {
   CodCollection,
   CodReturnRequest,
 } = require("../models/commerce");
-const { problem } = require("../domain/commerceRules");
+const {
+  problem,
+  paymentReadyToShip,
+  paymentReadyToReceive,
+} = require("../domain/commerceRules");
+const { orderWrite } = require("../domain/orderWriteGate");
 const { assertSameFingerprint } = require("../domain/idempotency");
 
 const ACTIVE_CASE = { status: { $in: ["OPEN", "IN_REVIEW"] } };
@@ -25,22 +30,47 @@ async function listingsForOrder(order, session) {
   return query;
 }
 
+async function hasValidCodCollection(order, session) {
+  if (order.paymentStatus !== "COLLECTED") return true;
+  const query = CodCollection.findOne({
+    _id: order.codCollectionId,
+    orderId: order._id,
+    buyerId: order.buyerId,
+    sellerId: order.sellerId,
+    amount: order.total,
+    currency: order.currency,
+  });
+  if (session) query.session(session);
+  return Boolean(await query);
+}
+
 async function assertNoOrderHolds(order, session) {
-  if (order.status === "NEEDS_REVIEW" || order.paymentReviewHold || await hasActiveOrderCase(order._id, session)) {
+  if (
+    order.status === "NEEDS_REVIEW" || order.paymentStatus === "NEEDS_REVIEW" ||
+    order.paymentReviewHold || await hasActiveOrderCase(order._id, session)
+  ) {
     throw problem(409, "ORDER_ON_HOLD", "Đơn đang được rà soát.");
   }
   const listings = await listingsForOrder(order, session);
   if (listings.length !== order.items.length || listings.some((listing) =>
-    listing.paymentReviewHold || listing.paymentReviewCheckoutIds.length > 0)) {
+    listing.paymentReviewHold || (listing.paymentReviewCheckoutIds || []).length > 0)) {
     throw problem(409, "ORDER_ON_HOLD", "Món trong đơn đang có xung đột cần rà soát.");
   }
   return listings;
 }
 
 async function assertOrderCanFulfill(order, session) {
+  if (!await hasValidCodCollection(order, session)) {
+    throw problem(409, "ORDER_ON_HOLD", "Thông tin thu COD của đơn cần được rà soát.");
+  }
   const listings = await assertNoOrderHolds(order, session);
-  if (listings.some((listing) =>
-    listing.saleStatus !== "SOLD" || String(listing.soldCheckoutId) !== String(order.checkoutId))) {
+  const listingById = new Map(listings.map((listing) => [String(listing._id), listing]));
+  if (order.items.some((item) => {
+    const listing = listingById.get(String(item.listingId));
+    return String(item.sellerId) !== String(order.sellerId) ||
+      !listing || String(listing.ownerId) !== String(order.sellerId) ||
+      listing.saleStatus !== "SOLD" || String(listing.soldCheckoutId) !== String(order.checkoutId);
+  })) {
     throw problem(409, "ORDER_NOT_FULFILLABLE", "Đơn chưa có quyền nhận toàn bộ món.");
   }
   return listings;
@@ -50,27 +80,27 @@ async function markOrderShipped({ orderId, sellerId, carrierName, trackingCode, 
   return mongoose.connection.transaction(async (session) => {
     const order = await Order.findOne({ _id: orderId, sellerId }).session(session);
     if (!order) throw problem(404, "NOT_FOUND", "Không tìm thấy đơn hàng.");
-    const allowed =
-      (order.paymentMethod === "COD" && order.status === "CONFIRMED" && order.paymentStatus === "UNPAID") ||
-      (order.paymentMethod === "VNPAY" && order.status === "PAID" && order.paymentStatus === "PAID");
     if (order.shippedAt) {
       if (order.carrierName === carrierName && order.trackingCode === trackingCode) {
         return { order, reused: true };
       }
       throw problem(409, "SHIPMENT_ALREADY_RECORDED", "Vận đơn đã được ghi nhận với thông tin khác.");
     }
-    if (!allowed) throw problem(409, "ORDER_NOT_FULFILLABLE", "Đơn chưa đủ điều kiện gửi hàng.");
+    if (!paymentReadyToShip(order)) {
+      throw problem(409, "ORDER_NOT_FULFILLABLE", "Đơn chưa đủ điều kiện gửi hàng.");
+    }
     await assertOrderCanFulfill(order, session);
     const shippedAt = new Date();
+    const write = orderWrite(order, {
+      _id: order._id,
+      sellerId,
+      status: order.status,
+      paymentStatus: order.paymentStatus,
+      shippedAt: null,
+    }, { $set: { carrierName, trackingCode, shippedAt } });
     const updated = await Order.updateOne(
-      {
-        _id: order._id,
-        sellerId,
-        status: order.status,
-        paymentStatus: order.paymentStatus,
-        shippedAt: null,
-      },
-      { $set: { carrierName, trackingCode, shippedAt } },
+      write.filter,
+      write.update,
       { session },
     );
     if (updated.modifiedCount !== 1) {
@@ -97,24 +127,22 @@ async function confirmOrderReceipt({ orderId, buyerId, requestId }) {
     const order = await Order.findOne({ _id: orderId, buyerId }).session(session);
     if (!order) throw problem(404, "NOT_FOUND", "Không tìm thấy đơn hàng.");
     if (order.status === "COMPLETED" && order.receivedAt) return { order, reused: true };
-    const allowed =
-      (order.paymentMethod === "COD" && order.status === "CONFIRMED") ||
-      (order.paymentMethod === "VNPAY" && order.status === "PAID");
-    if (!allowed || !order.shippedAt) {
+    if (!paymentReadyToReceive(order) || !order.shippedAt) {
       throw problem(409, "RECEIPT_NOT_ALLOWED", "Chỉ xác nhận nhận hàng sau khi Seller đã gửi đơn.");
     }
     await assertOrderCanFulfill(order, session);
     const receivedAt = new Date();
+    const write = orderWrite(order, {
+      _id: order._id,
+      buyerId,
+      status: order.status,
+      paymentStatus: order.paymentStatus,
+      shippedAt: { $ne: null },
+      receivedAt: null,
+    }, { $set: { status: "COMPLETED", receivedAt } });
     const updated = await Order.updateOne(
-      {
-        _id: order._id,
-        buyerId,
-        status: order.status,
-        paymentStatus: order.paymentStatus,
-        shippedAt: { $ne: null },
-        receivedAt: null,
-      },
-      { $set: { status: "COMPLETED", receivedAt } },
+      write.filter,
+      write.update,
       { session },
     );
     if (updated.modifiedCount !== 1) {
@@ -197,18 +225,19 @@ async function cancelCodOrder({ orderId, buyerId, requestId }) {
       throw problem(409, "LISTING_OWNERSHIP_CONFLICT", "Không thể trả món về kho an toàn.");
     }
 
+    const write = orderWrite(order, {
+      _id: order._id,
+      buyerId,
+      paymentMethod: "COD",
+      status: "CONFIRMED",
+      paymentStatus: "UNPAID",
+      shippedAt: null,
+      receivedAt: null,
+      codCollectionId: null,
+    }, { $set: { status: "CANCELLED", paymentStatus: "NOT_DUE" } });
     const updated = await Order.updateOne(
-      {
-        _id: order._id,
-        buyerId,
-        paymentMethod: "COD",
-        status: "CONFIRMED",
-        paymentStatus: "UNPAID",
-        shippedAt: null,
-        receivedAt: null,
-        codCollectionId: null,
-      },
-      { $set: { status: "CANCELLED", paymentStatus: "NOT_DUE" } },
+      write.filter,
+      write.update,
       { session },
     );
     if (updated.modifiedCount !== 1) {
@@ -288,17 +317,18 @@ async function recordCodCollection({
         }],
         { session },
       );
+      const write = orderWrite(order, {
+        _id: order._id,
+        sellerId,
+        paymentMethod: "COD",
+        status: order.status,
+        paymentStatus: "UNPAID",
+        codCollectionId: null,
+        shippedAt: { $ne: null },
+      }, { $set: { paymentStatus: "COLLECTED", codCollectionId: collection._id } });
       const updated = await Order.updateOne(
-        {
-          _id: order._id,
-          sellerId,
-          paymentMethod: "COD",
-          status: order.status,
-          paymentStatus: "UNPAID",
-          codCollectionId: null,
-          shippedAt: { $ne: null },
-        },
-        { $set: { paymentStatus: "COLLECTED", codCollectionId: collection._id } },
+        write.filter,
+        write.update,
         { session },
       );
       if (updated.modifiedCount !== 1) {
@@ -373,17 +403,18 @@ async function requestCodReturn({ orderId, sellerId, reason, requestId, idempote
         }],
         { session },
       );
+      const write = orderWrite(order, {
+        _id: order._id,
+        sellerId,
+        status: "CONFIRMED",
+        paymentStatus: "UNPAID",
+        codCollectionId: null,
+        shippedAt: { $ne: null },
+        receivedAt: null,
+      }, { $set: { status: "NEEDS_REVIEW", codReturnRequestId: returnRequest._id } });
       const updated = await Order.updateOne(
-        {
-          _id: order._id,
-          sellerId,
-          status: "CONFIRMED",
-          paymentStatus: "UNPAID",
-          codCollectionId: null,
-          shippedAt: { $ne: null },
-          receivedAt: null,
-        },
-        { $set: { status: "NEEDS_REVIEW", codReturnRequestId: returnRequest._id } },
+        write.filter,
+        write.update,
         { session },
       );
       if (updated.modifiedCount !== 1) {
@@ -466,7 +497,7 @@ async function decideCodReturn({
           listings.length !== order.items.length ||
           listings.some((listing) => listing.saleStatus !== "SOLD" ||
             String(listing.soldCheckoutId) !== String(order.checkoutId) ||
-            listing.paymentReviewHold || listing.paymentReviewCheckoutIds.length > 0)
+            listing.paymentReviewHold || (listing.paymentReviewCheckoutIds || []).length > 0)
         ) {
           throw problem(409, "COD_RETURN_CONFLICT", "Quyền sở hữu hoặc hold của món cần được rà soát trước khi chấp nhận.");
         }
@@ -488,16 +519,17 @@ async function decideCodReturn({
       await returnRequest.save({ session });
 
       if (decision === "ACCEPT_RETURN") {
+        const write = orderWrite(order, {
+          _id: order._id,
+          status: "NEEDS_REVIEW",
+          paymentStatus: "UNPAID",
+          codCollectionId: null,
+          receivedAt: null,
+          codReturnRequestId: returnRequest._id,
+        }, { $set: { status: "RETURNED", paymentStatus: "NOT_DUE" } });
         const updated = await Order.updateOne(
-          {
-            _id: order._id,
-            status: "NEEDS_REVIEW",
-            paymentStatus: "UNPAID",
-            codCollectionId: null,
-            receivedAt: null,
-            codReturnRequestId: returnRequest._id,
-          },
-          { $set: { status: "RETURNED", paymentStatus: "NOT_DUE" } },
+          write.filter,
+          write.update,
           { session },
         );
         if (updated.modifiedCount !== 1) {

@@ -123,6 +123,23 @@ router.get("/me/listings/:id", requireAuth, async (req, res) => {
   return success(req, res, listing);
 });
 
+function notificationDTO(notification) {
+  return {
+    notificationId: String(notification._id),
+    type: notification.type,
+    listingId: notification.listingId ? String(notification.listingId) : null,
+    orderId: notification.orderId ? String(notification.orderId) : null,
+    versionId: notification.versionId ? String(notification.versionId) : null,
+    reportId: notification.reportId ? String(notification.reportId) : null,
+    complaintId: notification.complaintId ? String(notification.complaintId) : null,
+    caseId: notification.caseId ? String(notification.caseId) : null,
+    message: notification.message,
+    ...(notification.type.startsWith("LISTING_") ? { reason: notification.reason } : {}),
+    readAt: notification.readAt,
+    createdAt: notification.createdAt,
+  };
+}
+
 router.get("/me/notifications", requireAuth, async (req, res) => {
   const pagination = readPagination(req.query);
   if (!pagination) {
@@ -141,7 +158,8 @@ router.get("/me/notifications", requireAuth, async (req, res) => {
     Notification.countDocuments({ ...filter, readAt: null }),
   ]);
 
-  return success(req, res, items, 200, { page, limit, total, unread });
+  res.set("Cache-Control", "private, no-store");
+  return success(req, res, items.map(notificationDTO), 200, { page, limit, total, unread });
 });
 
 router.patch("/me/notifications/:id/read", requireAuth, async (req, res) => {
@@ -160,10 +178,12 @@ router.patch("/me/notifications/:id/read", requireAuth, async (req, res) => {
       recipientId: req.user._id,
     });
     if (!alreadyRead) return fail(req, res, 404, "NOT_FOUND", "Không tìm thấy thông báo.");
-    return success(req, res, alreadyRead);
+    res.set("Cache-Control", "private, no-store");
+    return success(req, res, notificationDTO(alreadyRead));
   }
 
-  return success(req, res, notification);
+  res.set("Cache-Control", "private, no-store");
+  return success(req, res, notificationDTO(notification));
 });
 
 router.get(

@@ -6,6 +6,7 @@ const path = require("node:path");
 const User = require("../models/User");
 const Listing = require("../models/Listing");
 const Media = require("../models/Media");
+const Complaint = require("../models/Complaint");
 const Report = require("../models/Report");
 const Case = require("../models/Case");
 const AuditEvent = require("../models/AuditEvent");
@@ -36,6 +37,7 @@ async function main() {
       User,
       Listing,
       Media,
+      Complaint,
       Report,
       Case,
       AuditEvent,

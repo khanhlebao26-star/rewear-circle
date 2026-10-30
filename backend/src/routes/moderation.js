@@ -8,15 +8,27 @@ const Media = require("../models/Media");
 const User = require("../models/User");
 const AuditEvent = require("../models/AuditEvent");
 const Notification = require("../models/Notification");
-const { readListingReport, readCaseDecision } = require("../domain/moderationRules");
-const { problem } = require("../domain/commerceRules");
+const Complaint = require("../models/Complaint");
+const { Order, PaymentAttempt, CodCollection } = require("../models/commerce");
+const {
+  readListingReport,
+  readCaseDecision,
+  readAssignment,
+  readOrderCaseDecision,
+} = require("../domain/moderationRules");
+const { readIdempotencyKey, fingerprint, assertSameFingerprint } = require("../domain/idempotency");
+const { orderWrite } = require("../domain/orderWriteGate");
+const { orderItemDTO } = require("../domain/orderDTO");
+const { problem, validId } = require("../domain/commerceRules");
 const { applyAdminVisibility } = require("../services/moderation");
 const {
   requireAuth,
   requireAdmin,
+  requireSupport,
   requireVerifiedEmail,
 } = require("../middleware/requireAuth");
 const { success, failure: fail } = require("../http/responses");
+const { supportCaseDetail, readContactAccess } = require("../services/caseAccess");
 
 const reportLimit = rateLimit({
   windowMs: 24 * 60 * 60 * 1000,
@@ -36,6 +48,19 @@ function pagination(query) {
   return { page, limit };
 }
 
+function readContactReason(body) {
+  if (!body || typeof body !== "object" || Array.isArray(body) ||
+      Object.keys(body).length !== 1 || typeof body.reason !== "string") return null;
+  const reason = body.reason.trim();
+  if (
+    reason.length < 10 || reason.length > 500 ||
+    /[\u0000-\u001f\u007f-\u009f]/.test(reason) ||
+    /[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/.test(reason) ||
+    /\+?\d[\d\s().-]{7,}\d/.test(reason)
+  ) return null;
+  return reason;
+}
+
 function activeReportCaseFilter(listingId) {
   return {
     type: "REPORT",
@@ -43,6 +68,92 @@ function activeReportCaseFilter(listingId) {
     targetId: listingId,
     status: { $in: ["OPEN", "IN_REVIEW"] },
   };
+}
+
+function adminCaseDTO(caseRecord) {
+  return {
+    caseId: String(caseRecord._id),
+    type: caseRecord.type,
+    targetType: caseRecord.targetType,
+    targetId: String(caseRecord.targetId),
+    status: caseRecord.status,
+    version: caseRecord.version,
+    assignedSupportId: caseRecord.assignedSupportId ? String(caseRecord.assignedSupportId) : null,
+    outcomeCode: caseRecord.outcomeCode,
+    outcomeSummary: caseRecord.outcomeSummary,
+    createdAt: caseRecord.createdAt,
+    updatedAt: caseRecord.updatedAt,
+    closedAt: caseRecord.closedAt,
+    assignmentHistory: (caseRecord.assignmentHistory || []).map((assignment) => ({
+      actorId: String(assignment.actorId),
+      fromSupportId: assignment.fromSupportId ? String(assignment.fromSupportId) : null,
+      assignedSupportId: assignment.assignedSupportId ? String(assignment.assignedSupportId) : null,
+      createdAt: assignment.createdAt,
+    })),
+    decisions: (caseRecord.decisions || []).map((decision) => ({
+      actorId: String(decision.actorId),
+      fromStatus: decision.fromStatus,
+      toStatus: decision.toStatus,
+      outcomeCode: decision.outcomeCode,
+      outcomeSummary: decision.outcomeSummary,
+      internalNote: decision.internalNote,
+      createdAt: decision.createdAt,
+    })),
+  };
+}
+
+function complaintDTO(complaint) {
+  return {
+    complaintId: String(complaint._id),
+    caseId: String(complaint.caseId),
+    orderId: String(complaint.orderId),
+    buyerId: String(complaint.buyerId),
+    sellerId: String(complaint.sellerId),
+    type: complaint.type,
+    reasonCode: complaint.reasonCode,
+    details: complaint.details,
+    affectedOrderItemIds: (complaint.affectedOrderItemIds || []).map(String),
+    itemSnapshots: (complaint.itemSnapshots || []).map(orderItemDTO),
+    orderStatusAtSubmission: complaint.orderStatusAtSubmission,
+    paymentMethod: complaint.paymentMethod,
+    paymentStatusAtSubmission: complaint.paymentStatusAtSubmission,
+    carrierNameAtSubmission: complaint.carrierNameAtSubmission,
+    trackingCodeAtSubmission: complaint.trackingCodeAtSubmission,
+    shippedAtSubmission: complaint.shippedAtSubmission,
+    receivedAtSubmission: complaint.receivedAtSubmission,
+    evidenceMediaIds: (complaint.evidenceMediaIds || []).map(String),
+    createdAt: complaint.createdAt,
+  };
+}
+
+function caseSummaryDTO(caseRecord) {
+  return {
+    caseId: String(caseRecord._id),
+    type: caseRecord.type,
+    targetType: caseRecord.targetType,
+    targetId: String(caseRecord.targetId),
+    status: caseRecord.status,
+    version: caseRecord.version,
+    assignedSupportId: caseRecord.assignedSupportId ? String(caseRecord.assignedSupportId) : null,
+    outcomeCode: caseRecord.outcomeCode,
+    outcomeSummary: caseRecord.outcomeSummary,
+    createdAt: caseRecord.createdAt,
+    updatedAt: caseRecord.updatedAt,
+    closedAt: caseRecord.closedAt,
+  };
+}
+
+async function auditCaseDetailRead(req, caseRecord) {
+  await AuditEvent.create({
+    actorId: req.user._id,
+    action: "CASE_DETAIL_READ",
+    targetType: "CASE",
+    targetId: caseRecord._id,
+    caseId: caseRecord._id,
+    requestId: req.requestId,
+    fromState: caseRecord.status,
+    toState: caseRecord.status,
+  });
 }
 
 async function createReport(req, input) {
@@ -53,23 +164,28 @@ async function createReport(req, input) {
       throw problem(403, "FORBIDDEN", "Không thể báo cáo tin của chính mình.");
     }
 
-    if (input.evidenceMediaIds.length) {
-      const evidenceCount = await Media.countDocuments({
-        _id: { $in: input.evidenceMediaIds },
-        ownerId: req.user._id,
-        purpose: "CASE_EVIDENCE",
-      }).session(session);
-      if (evidenceCount !== input.evidenceMediaIds.length) {
-        throw problem(422, "VALIDATION_ERROR", "Bằng chứng phải là ảnh CASE_EVIDENCE do bạn tải lên.");
-      }
-    }
-
     let caseRecord = await Case.findOne(activeReportCaseFilter(listing._id)).session(session);
     if (!caseRecord) {
       [caseRecord] = await Case.create(
         [{ type: "REPORT", targetType: "LISTING", targetId: listing._id }],
         { session },
       );
+    }
+
+    if (input.evidenceMediaIds.length) {
+      const binding = await Media.updateMany(
+        {
+          _id: { $in: input.evidenceMediaIds },
+          ownerId: req.user._id,
+          purpose: "CASE_EVIDENCE",
+          $or: [{ caseId: null }, { caseId: caseRecord._id }],
+        },
+        { $set: { caseId: caseRecord._id } },
+        { session },
+      );
+      if (binding.matchedCount !== input.evidenceMediaIds.length) {
+        throw problem(422, "VALIDATION_ERROR", "Bằng chứng phải thuộc bạn và chưa gắn với vụ việc khác.");
+      }
     }
 
     const [report] = await Report.create(
@@ -158,17 +274,31 @@ router.post(
 router.get("/admin/cases", requireAuth, requireAdmin, async (req, res) => {
   const pageInfo = pagination(req.query);
   const status = req.query.status;
+  const type = req.query.type;
+  const assignedSupportId = req.query.assignedSupportId;
+  const unassigned = req.query.unassigned;
   if (
     !pageInfo ||
-    (req.query.type !== undefined && req.query.type !== "REPORT") ||
+    (type !== undefined && !["REPORT", "DELIVERY", "ITEM"].includes(type)) ||
     (status !== undefined && !["OPEN", "IN_REVIEW", "CLOSED"].includes(status)) ||
-    Object.keys(req.query).some((key) => !["type", "status", "page", "limit"].includes(key))
+    (assignedSupportId !== undefined && !validId(assignedSupportId)) ||
+    (unassigned !== undefined && !["true", "false"].includes(unassigned)) ||
+    (assignedSupportId !== undefined && unassigned === "true") ||
+    Object.keys(req.query).some((key) => ![
+      "type", "status", "assignedSupportId", "unassigned", "page", "limit",
+    ].includes(key))
   ) {
     return fail(req, res, 422, "VALIDATION_ERROR", "Bộ lọc hoặc phân trang không hợp lệ.");
   }
 
+  const filter = {
+    ...(type ? { type } : {}),
+    ...(status ? { status } : {}),
+    ...(assignedSupportId ? { assignedSupportId } : {}),
+    ...(unassigned === "true" ? { assignedSupportId: null } : {}),
+  };
   const [result] = await Case.aggregate([
-    { $match: { type: "REPORT", ...(status ? { status } : {}) } },
+    { $match: filter },
     { $sort: { updatedAt: -1, _id: -1 } },
     {
       $facet: {
@@ -178,9 +308,23 @@ router.get("/admin/cases", requireAuth, requireAdmin, async (req, res) => {
           {
             $lookup: {
               from: Report.collection.name,
-              localField: "_id",
-              foreignField: "caseId",
-              as: "reports",
+              let: { caseId: "$_id" },
+              pipeline: [
+                { $match: { $expr: { $eq: ["$caseId", "$$caseId"] } } },
+                { $count: "count" },
+              ],
+              as: "reportCounts",
+            },
+          },
+          {
+            $lookup: {
+              from: Complaint.collection.name,
+              let: { caseId: "$_id" },
+              pipeline: [
+                { $match: { $expr: { $eq: ["$caseId", "$$caseId"] } } },
+                { $count: "count" },
+              ],
+              as: "complaintCounts",
             },
           },
           {
@@ -190,12 +334,14 @@ router.get("/admin/cases", requireAuth, requireAdmin, async (req, res) => {
               targetType: 1,
               targetId: 1,
               status: 1,
+              version: 1,
               assignedSupportId: 1,
               outcomeCode: 1,
               outcomeSummary: 1,
               createdAt: 1,
               updatedAt: 1,
-              reportCount: { $size: "$reports" },
+              reportCount: { $ifNull: [{ $arrayElemAt: ["$reportCounts.count", 0] }, 0] },
+              complaintCount: { $ifNull: [{ $arrayElemAt: ["$complaintCounts.count", 0] }, 0] },
             },
           },
         ],
@@ -212,174 +358,456 @@ router.get("/admin/cases", requireAuth, requireAdmin, async (req, res) => {
 });
 
 router.get("/admin/cases/:caseId", requireAuth, requireAdmin, async (req, res) => {
-  if (!mongoose.isValidObjectId(req.params.caseId)) {
+  if (!validId(req.params.caseId)) {
     return fail(req, res, 404, "NOT_FOUND", "Không tìm thấy vụ việc.");
   }
 
-  const caseRecord = await Case.findOne({ _id: req.params.caseId, type: "REPORT" });
+  const caseRecord = await Case.findById(req.params.caseId);
   if (!caseRecord) return fail(req, res, 404, "NOT_FOUND", "Không tìm thấy vụ việc.");
 
-  const [reports, listing, auditHistory] = await Promise.all([
-    Report.find({ caseId: caseRecord._id })
-      .sort({ createdAt: 1 })
-      .populate("reporterId", "displayName")
-      .lean(),
-    Listing.findById(caseRecord.targetId),
-    AuditEvent.find({ caseId: caseRecord._id })
-      .sort({ createdAt: -1 })
-      .limit(100)
-      .select("actorId action targetType targetId requestId reason fromState toState createdAt")
-      .lean(),
-  ]);
-  const approvedVersion = listing?.versions.id(listing.approvedVersionId);
+  if (caseRecord.type === "REPORT" && caseRecord.targetType === "LISTING") {
+    const [reports, listing, auditHistory] = await Promise.all([
+      Report.find({ caseId: caseRecord._id })
+        .sort({ createdAt: 1 })
+        .populate("reporterId", "displayName")
+        .lean(),
+      Listing.findById(caseRecord.targetId),
+      AuditEvent.find({ caseId: caseRecord._id })
+        .sort({ createdAt: -1 })
+        .limit(100)
+        .select("actorId action targetType targetId requestId reason fromState toState createdAt")
+        .lean(),
+    ]);
+    const approvedVersion = listing?.versions.id(listing.approvedVersionId);
+    await auditCaseDetailRead(req, caseRecord);
+    res.set("Cache-Control", "private, no-store");
 
-  return success(req, res, {
-    case: caseRecord,
-    listing: listing
-      ? {
-          listingId: String(listing._id),
-          title: approvedVersion?.title || listing.versions.at(-1)?.title || "",
-          ownerId: String(listing.ownerId),
-          approvedVersionId: listing.approvedVersionId,
-          reviewHold: listing.reviewHold,
-          correctionRequested: listing.correctionRequested,
-          sellerHidden: listing.sellerHidden,
-          adminHidden: listing.adminHidden,
-          saleStatus: listing.saleStatus,
-        }
-      : null,
-    reports,
-    auditHistory,
-  });
+    return success(req, res, {
+      case: adminCaseDTO(caseRecord),
+      listing: listing
+        ? {
+            listingId: String(listing._id),
+            title: approvedVersion?.title || listing.versions.at(-1)?.title || "",
+            ownerId: String(listing.ownerId),
+            approvedVersionId: listing.approvedVersionId ? String(listing.approvedVersionId) : null,
+            reviewHold: listing.reviewHold,
+            correctionRequested: listing.correctionRequested,
+            sellerHidden: listing.sellerHidden,
+            adminHidden: listing.adminHidden,
+            saleStatus: listing.saleStatus,
+          }
+        : null,
+      reports: reports.map((report) => ({
+        reportId: String(report._id),
+        caseId: String(report.caseId),
+        listingId: String(report.listingId),
+        reporter: report.reporterId ? {
+          userId: String(report.reporterId._id),
+          displayName: report.reporterId.displayName,
+        } : null,
+        reasonCode: report.reasonCode,
+        details: report.details,
+        evidenceMediaIds: (report.evidenceMediaIds || []).map(String),
+        createdAt: report.createdAt,
+      })),
+      auditHistory,
+    });
+  }
+
+  if (["DELIVERY", "ITEM"].includes(caseRecord.type) && caseRecord.targetType === "ORDER") {
+    const [order, complaints, auditHistory] = await Promise.all([
+      Order.findOne({ _id: caseRecord.targetId }).select(
+        "_id checkoutId buyerId sellerId items status paymentMethod paymentStatus currency subtotal shippingFee total carrierName trackingCode shippedAt receivedAt paymentReviewHold",
+      ),
+      Complaint.find({ caseId: caseRecord._id }).sort({ createdAt: 1 }),
+      AuditEvent.find({ caseId: caseRecord._id })
+        .sort({ createdAt: -1 })
+        .limit(100)
+        .select("actorId action targetType targetId requestId reason fromState toState createdAt")
+        .lean(),
+    ]);
+    if (!order) return fail(req, res, 404, "NOT_FOUND", "Không tìm thấy vụ việc.");
+
+    const [attempt, collection] = await Promise.all([
+      order.paymentMethod === "VNPAY"
+        ? PaymentAttempt.findOne({ checkoutId: order.checkoutId })
+            .select("_id provider merchantReference status verifiedAt")
+        : null,
+      CodCollection.findOne({ orderId: order._id }).select("amount currency source recordedAt"),
+    ]);
+    await auditCaseDetailRead(req, caseRecord);
+    res.set("Cache-Control", "private, no-store");
+
+    return success(req, res, {
+      case: adminCaseDTO(caseRecord),
+      order: {
+        orderId: String(order._id),
+        buyerId: String(order.buyerId),
+        sellerId: String(order.sellerId),
+        status: order.status,
+        paymentMethod: order.paymentMethod,
+        paymentStatus: order.paymentStatus,
+        currency: order.currency,
+        subtotal: order.subtotal,
+        shippingFee: order.shippingFee,
+        total: order.total,
+        paymentReviewHold: Boolean(order.paymentReviewHold),
+        carrierName: order.carrierName,
+        trackingCode: order.trackingCode,
+        shippedAt: order.shippedAt,
+        receivedAt: order.receivedAt,
+        items: order.items.map(orderItemDTO),
+        paymentReference: attempt ? {
+          attemptId: String(attempt._id),
+          provider: attempt.provider,
+          merchantReference: attempt.merchantReference,
+          status: attempt.status,
+          verifiedAt: attempt.verifiedAt,
+        } : null,
+        codCollection: collection ? {
+          amount: collection.amount,
+          currency: collection.currency,
+          source: collection.source,
+          recordedAt: collection.recordedAt,
+        } : null,
+      },
+      complaints: complaints.map(complaintDTO),
+      auditHistory,
+    });
+  }
+
+  return fail(req, res, 404, "NOT_FOUND", "Không tìm thấy vụ việc.");
 });
 
-router.post(
-  "/admin/cases/:caseId/decisions",
-  requireAuth,
-  requireAdmin,
-  async (req, res) => {
-    if (!mongoose.isValidObjectId(req.params.caseId)) {
-      return fail(req, res, 404, "NOT_FOUND", "Không tìm thấy vụ việc.");
-    }
-    const decision = readCaseDecision(req.body);
-    if (!decision) return fail(req, res, 422, "VALIDATION_ERROR", "Quyết định xử lý không hợp lệ.");
+router.patch("/admin/cases/:caseId/assignment", requireAuth, requireAdmin, async (req, res) => {
+  if (!validId(req.params.caseId)) {
+    return fail(req, res, 404, "NOT_FOUND", "Không tìm thấy vụ việc.");
+  }
+  const assignment = readAssignment(req.body);
+  if (!assignment) return fail(req, res, 422, "VALIDATION_ERROR", "Thông tin phân công không hợp lệ.");
+  const idempotencyKey = readIdempotencyKey(req);
+  const fingerprintValue = fingerprint({
+    operation: "CASE_ASSIGNMENT",
+    caseId: String(req.params.caseId),
+    ...assignment,
+  });
 
-    let result;
-    try {
-      result = await mongoose.connection.transaction(async (session) => {
-      const caseRecord = await Case.findOne({ _id: req.params.caseId, type: "REPORT" }).session(session);
+  try {
+    const result = await mongoose.connection.transaction(async (session) => {
+      const caseRecord = await Case.findById(req.params.caseId).session(session);
       if (!caseRecord) throw problem(404, "NOT_FOUND", "Không tìm thấy vụ việc.");
 
-      if (decision.status === "IN_REVIEW") {
-        if (caseRecord.status !== "OPEN") {
-          throw problem(409, "INVALID_STATE", "Chỉ vụ việc OPEN mới được chuyển sang IN_REVIEW.");
-        }
-        caseRecord.status = "IN_REVIEW";
-        caseRecord.decisions.push({
-          actorId: req.user._id,
-          fromStatus: "OPEN",
-          toStatus: "IN_REVIEW",
-        });
-        await caseRecord.save({ session });
-        await AuditEvent.create(
-          [{
-            actorId: req.user._id,
-            action: "CASE_REVIEW_STARTED",
-            targetType: "CASE",
-            targetId: caseRecord._id,
-            requestId: req.requestId,
-            fromState: "OPEN",
-            toState: "IN_REVIEW",
-            caseId: caseRecord._id,
-          }],
-          { session },
-        );
-        return { caseId: String(caseRecord._id), status: caseRecord.status };
+      const replay = caseRecord.assignmentHistory.find((item) =>
+        String(item.actorId) === String(req.user._id) && item.idempotencyKey === idempotencyKey,
+      );
+      if (replay) {
+        assertSameFingerprint(replay.idempotencyFingerprint, fingerprintValue);
+        return { case: caseSummaryDTO(caseRecord), reused: true };
+      }
+      if (caseRecord.status === "CLOSED") {
+        throw problem(409, "CASE_NOT_ACTIVE", "Không thể phân công vụ việc đã đóng.");
+      }
+      if (caseRecord.version !== assignment.expectedVersion) {
+        throw problem(409, "CASE_VERSION_CONFLICT", "Vụ việc vừa được cập nhật; hãy tải lại.");
       }
 
-      if (caseRecord.status !== "IN_REVIEW") {
+      const nextSupportId = assignment.assignedSupportId;
+      if (nextSupportId) {
+        const support = await User.findOne({ _id: nextSupportId, role: "SUPPORT" }).session(session);
+        if (!support) throw problem(422, "VALIDATION_ERROR", "Người nhận phải là tài khoản Support đang hoạt động.");
+      }
+      const previousSupportId = caseRecord.assignedSupportId ? String(caseRecord.assignedSupportId) : null;
+      if (previousSupportId === nextSupportId) {
+        return { case: caseSummaryDTO(caseRecord), reused: false };
+      }
+
+      caseRecord.assignedSupportId = nextSupportId;
+      caseRecord.assignmentHistory.push({
+        actorId: req.user._id,
+        fromSupportId: previousSupportId,
+        assignedSupportId: nextSupportId,
+        idempotencyKey,
+        idempotencyFingerprint: fingerprintValue,
+        requestId: req.requestId,
+      });
+      caseRecord.version += 1;
+      await caseRecord.save({ session });
+      await AuditEvent.create([{
+        actorId: req.user._id,
+        action: "CASE_ASSIGNED",
+        targetType: "CASE",
+        targetId: caseRecord._id,
+        requestId: req.requestId,
+        fromState: previousSupportId ? "ASSIGNED" : "UNASSIGNED",
+        toState: nextSupportId ? "ASSIGNED" : "UNASSIGNED",
+        caseId: caseRecord._id,
+      }], { session });
+      return { case: caseSummaryDTO(caseRecord), reused: false };
+    });
+    return success(req, res, result.case, 200, { idempotentReplay: result.reused });
+  } catch (error) {
+    if (error.name === "VersionError") {
+      return fail(req, res, 409, "CASE_VERSION_CONFLICT", "Vụ việc vừa được cập nhật; hãy tải lại.");
+    }
+    throw error;
+  }
+});
+
+router.post("/admin/cases/:caseId/decisions", requireAuth, requireAdmin, async (req, res) => {
+  if (!validId(req.params.caseId)) {
+    return fail(req, res, 404, "NOT_FOUND", "Không tìm thấy vụ việc.");
+  }
+  const suppliedKey = req.get("Idempotency-Key");
+  let response;
+  try {
+    response = await mongoose.connection.transaction(async (session) => {
+      const caseRecord = await Case.findById(req.params.caseId).session(session);
+      if (!caseRecord) throw problem(404, "NOT_FOUND", "Không tìm thấy vụ việc.");
+
+      const isOrderCase = caseRecord.targetType === "ORDER" && ["DELIVERY", "ITEM"].includes(caseRecord.type);
+      const decision = isOrderCase ? readOrderCaseDecision(req.body) : readCaseDecision(req.body);
+      if (!decision) throw problem(422, "VALIDATION_ERROR", "Quyết định xử lý không hợp lệ.");
+      const idempotencyKey = isOrderCase || suppliedKey ? readIdempotencyKey(req) : "";
+      const fingerprintValue = idempotencyKey
+        ? fingerprint({
+            operation: "CASE_DECISION",
+            caseId: String(caseRecord._id),
+            decision,
+          })
+        : "";
+
+      if (idempotencyKey) {
+        const replay = caseRecord.decisions.find((item) =>
+          String(item.actorId) === String(req.user._id) && item.idempotencyKey === idempotencyKey,
+        );
+        if (replay) {
+          assertSameFingerprint(replay.idempotencyFingerprint, fingerprintValue);
+          return {
+            result: {
+              caseId: String(caseRecord._id),
+              status: caseRecord.status,
+              outcomeCode: caseRecord.outcomeCode,
+              outcomeSummary: caseRecord.outcomeSummary,
+            },
+            reused: true,
+          };
+        }
+      }
+
+      if (decision.expectedVersion !== undefined && caseRecord.version !== decision.expectedVersion) {
+        throw problem(409, "CASE_VERSION_CONFLICT", "Vụ việc vừa được cập nhật; hãy tải lại.");
+      }
+      if (decision.status === "IN_REVIEW" && caseRecord.status !== "OPEN") {
+        throw problem(409, "INVALID_STATE", "Chỉ vụ việc OPEN mới được chuyển sang IN_REVIEW.");
+      }
+      if (decision.status === "CLOSED" && caseRecord.status !== "IN_REVIEW") {
         throw problem(409, "INVALID_STATE", "Chỉ vụ việc IN_REVIEW mới được đóng.");
       }
 
-      const listingAction = decision.outcomeCode === "CORRECTION_REQUIRED" ||
-        decision.outcomeCode === "LISTING_HIDDEN"
-        ? "HIDE"
-        : decision.listingAction;
-      if (listingAction) {
-        const listing = await Listing.findById(caseRecord.targetId).session(session);
-        if (!listing) throw problem(404, "NOT_FOUND", "Không tìm thấy tin liên quan.");
-        await applyAdminVisibility({
-          listing,
-          action: listingAction,
-          reason: decision.outcomeSummary,
-          requireCorrection: decision.outcomeCode === "CORRECTION_REQUIRED",
-          actorId: req.user._id,
-          requestId: req.requestId,
-          caseId: caseRecord._id,
-          session,
-        });
+      if (isOrderCase) {
+        const order = await Order.findById(caseRecord.targetId).session(session);
+        if (!order) throw problem(404, "NOT_FOUND", "Không tìm thấy đơn liên quan.");
+        const write = orderWrite(order, { _id: order._id }, {});
+        const updated = await Order.updateOne(write.filter, write.update, { session });
+        if (updated.modifiedCount !== 1) {
+          throw problem(409, "CASE_VERSION_CONFLICT", "Đơn hàng vừa được cập nhật; hãy tải lại.");
+        }
       }
 
       const fromStatus = caseRecord.status;
-      caseRecord.status = "CLOSED";
-      caseRecord.outcomeCode = decision.outcomeCode;
-      caseRecord.outcomeSummary = decision.outcomeSummary;
-      caseRecord.closedAt = new Date();
-      caseRecord.decisions.push({
-        actorId: req.user._id,
-        fromStatus,
-        toStatus: "CLOSED",
-        outcomeCode: decision.outcomeCode,
-        outcomeSummary: decision.outcomeSummary,
-        internalNote: decision.internalNote,
-      });
-      await caseRecord.save({ session });
-      await AuditEvent.create(
-        [{
+      if (decision.status === "IN_REVIEW") {
+        caseRecord.status = "IN_REVIEW";
+        caseRecord.decisions.push({
           actorId: req.user._id,
-          action: "CASE_CLOSED",
-          targetType: "CASE",
-          targetId: caseRecord._id,
-          requestId: req.requestId,
-          reason: decision.outcomeSummary,
-          fromState: fromStatus,
-          toState: "CLOSED",
-          caseId: caseRecord._id,
-        }],
-        { session },
-      );
-
-      const reports = await Report.find({ caseId: caseRecord._id }).session(session);
-      if (reports.length) {
-        await Notification.create(
-          reports.map((report) => ({
-            recipientId: report.reporterId,
-            type: "CASE_CLOSED",
-            listingId: report.listingId,
-            reportId: report._id,
+          fromStatus,
+          toStatus: "IN_REVIEW",
+          ...(idempotencyKey ? { idempotencyKey, idempotencyFingerprint: fingerprintValue } : {}),
+        });
+      } else {
+        const listingAction = isOrderCase ? null :
+          decision.outcomeCode === "CORRECTION_REQUIRED" || decision.outcomeCode === "LISTING_HIDDEN"
+            ? "HIDE"
+            : decision.listingAction;
+        if (listingAction) {
+          const listing = await Listing.findById(caseRecord.targetId).session(session);
+          if (!listing) throw problem(404, "NOT_FOUND", "Không tìm thấy tin liên quan.");
+          await applyAdminVisibility({
+            listing,
+            action: listingAction,
+            reason: decision.outcomeCode,
+            requireCorrection: decision.outcomeCode === "CORRECTION_REQUIRED",
+            actorId: req.user._id,
+            requestId: req.requestId,
             caseId: caseRecord._id,
-            message: `Báo cáo của bạn đã được xử lý: ${decision.outcomeSummary}`,
-          })),
-          { session, ordered: true },
-        );
+            session,
+          });
+        }
+        caseRecord.status = "CLOSED";
+        caseRecord.outcomeCode = decision.outcomeCode;
+        caseRecord.outcomeSummary = decision.outcomeSummary;
+        caseRecord.closedAt = new Date();
+        caseRecord.decisions.push({
+          actorId: req.user._id,
+          fromStatus,
+          toStatus: "CLOSED",
+          outcomeCode: decision.outcomeCode,
+          outcomeSummary: decision.outcomeSummary,
+          internalNote: decision.internalNote,
+          ...(idempotencyKey ? { idempotencyKey, idempotencyFingerprint: fingerprintValue } : {}),
+        });
+      }
+      caseRecord.version += 1;
+      await caseRecord.save({ session });
+      await AuditEvent.create([{
+        actorId: req.user._id,
+        action: decision.status === "IN_REVIEW" ? "CASE_REVIEW_STARTED" : "CASE_CLOSED",
+        targetType: "CASE",
+        targetId: caseRecord._id,
+        requestId: req.requestId,
+        reason: decision.outcomeCode || "",
+        fromState: fromStatus,
+        toState: caseRecord.status,
+        caseId: caseRecord._id,
+      }], { session });
+
+      if (decision.status === "CLOSED") {
+        const reports = await Report.find({ caseId: caseRecord._id }).session(session);
+        const complaints = await Complaint.find({ caseId: caseRecord._id }).session(session);
+        const recipients = new Map();
+        for (const report of reports) recipients.set(String(report.reporterId), report.reporterId);
+        for (const complaint of complaints) recipients.set(String(complaint.buyerId), complaint.buyerId);
+        if (recipients.size) {
+          await Notification.create([...recipients.values()].map((recipientId) => ({
+            recipientId,
+            type: "CASE_CLOSED",
+            ...(caseRecord.targetType === "LISTING"
+              ? { listingId: caseRecord.targetId }
+              : { orderId: caseRecord.targetId }),
+            caseId: caseRecord._id,
+            dedupeKey: `case-closed:${caseRecord._id}:${recipientId}`,
+            message: "Vụ việc của bạn đã được xử lý. Hãy mở trang khiếu nại để xem kết quả.",
+          })), { session, ordered: true });
+        }
       }
 
       return {
-        caseId: String(caseRecord._id),
-        status: caseRecord.status,
-        outcomeCode: caseRecord.outcomeCode,
-        outcomeSummary: caseRecord.outcomeSummary,
+        result: {
+          caseId: String(caseRecord._id),
+          status: caseRecord.status,
+          version: caseRecord.version,
+          outcomeCode: caseRecord.outcomeCode,
+          outcomeSummary: caseRecord.outcomeSummary,
+        },
+        reused: false,
       };
-      });
-    } catch (error) {
-      if (error.name === "VersionError") {
-        return fail(req, res, 409, "CONFLICT", "Vụ việc hoặc tin vừa được thay đổi; hãy tải lại.");
-      }
-      throw error;
+    });
+  } catch (error) {
+    if (error.name === "VersionError") {
+      return fail(req, res, 409, "CASE_VERSION_CONFLICT", "Vụ việc hoặc tin vừa được thay đổi; hãy tải lại.");
     }
+    throw error;
+  }
 
-    return success(req, res, result);
-  },
-);
+  return success(req, res, response.result, 200, { idempotentReplay: response.reused });
+});
+
+router.get("/support/cases", requireAuth, requireSupport, async (req, res) => {
+  const pageInfo = pagination(req.query);
+  const type = req.query.type;
+  const status = req.query.status;
+  if (
+    !pageInfo ||
+    Object.keys(req.query).some((key) => !["type", "status", "page", "limit"].includes(key)) ||
+    (type !== undefined && !["REPORT", "DELIVERY", "ITEM"].includes(type)) ||
+    (status !== undefined && !["OPEN", "IN_REVIEW"].includes(status))
+  ) {
+    return fail(req, res, 422, "VALIDATION_ERROR", "Bộ lọc hoặc phân trang không hợp lệ.");
+  }
+  const filter = {
+    assignedSupportId: req.user._id,
+    status: status || { $in: ["OPEN", "IN_REVIEW"] },
+    ...(type ? { type } : {}),
+  };
+  const cases = await Case.find(filter)
+    .sort({ updatedAt: -1, _id: -1 })
+    .skip((pageInfo.page - 1) * pageInfo.limit)
+    .limit(pageInfo.limit)
+    .select("type targetType targetId status version assignedSupportId createdAt updatedAt closedAt outcomeCode outcomeSummary")
+    .lean();
+  const total = await Case.countDocuments(filter);
+  const caseIds = cases.map((caseRecord) => caseRecord._id);
+  const [reportCounts, complaintCounts] = caseIds.length
+    ? await Promise.all([
+        Report.aggregate([
+          { $match: { caseId: { $in: caseIds } } },
+          { $group: { _id: "$caseId", count: { $sum: 1 } } },
+        ]),
+        Complaint.aggregate([
+          { $match: { caseId: { $in: caseIds } } },
+          { $group: { _id: "$caseId", count: { $sum: 1 } } },
+        ]),
+      ])
+    : [[], []];
+  const reportCountByCase = new Map(reportCounts.map((record) => [String(record._id), record.count]));
+  const complaintCountByCase = new Map(complaintCounts.map((record) => [String(record._id), record.count]));
+  res.set("Cache-Control", "private, no-store");
+  return success(req, res, cases.map((caseRecord) => ({
+    caseId: String(caseRecord._id),
+    type: caseRecord.type,
+    targetType: caseRecord.targetType,
+    targetId: String(caseRecord.targetId),
+    status: caseRecord.status,
+    version: caseRecord.version,
+    assignedSupportId: String(caseRecord.assignedSupportId),
+    reportCount: reportCountByCase.get(String(caseRecord._id)) || 0,
+    complaintCount: complaintCountByCase.get(String(caseRecord._id)) || 0,
+    createdAt: caseRecord.createdAt,
+    updatedAt: caseRecord.updatedAt,
+    closedAt: caseRecord.closedAt,
+    outcomeCode: caseRecord.outcomeCode,
+    outcomeSummary: caseRecord.outcomeSummary,
+  })), 200, { page: pageInfo.page, limit: pageInfo.limit, total });
+});
+
+router.get("/support/cases/:caseId", requireAuth, requireSupport, async (req, res) => {
+  if (!validId(req.params.caseId)) return fail(req, res, 404, "NOT_FOUND", "Không tìm thấy vụ việc.");
+  const data = await supportCaseDetail({
+    caseId: req.params.caseId,
+    userId: req.user._id,
+    requestId: req.requestId,
+  });
+  res.set("Cache-Control", "private, no-store");
+  return success(req, res, data);
+});
+
+router.post("/support/cases/:caseId/contact-access", requireAuth, requireSupport, async (req, res) => {
+  if (!validId(req.params.caseId)) return fail(req, res, 404, "NOT_FOUND", "Không tìm thấy vụ việc.");
+  const reason = readContactReason(req.body);
+  if (!reason) return fail(req, res, 422, "VALIDATION_ERROR", "Lý do truy cập không hợp lệ.");
+  const data = await readContactAccess({
+    caseId: req.params.caseId,
+    userId: req.user._id,
+    role: "SUPPORT",
+    reason,
+    requestId: req.requestId,
+  });
+  res.set("Cache-Control", "private, no-store");
+  return success(req, res, data);
+});
+
+router.post("/admin/cases/:caseId/contact-access", requireAuth, requireAdmin, async (req, res) => {
+  if (!validId(req.params.caseId)) return fail(req, res, 404, "NOT_FOUND", "Không tìm thấy vụ việc.");
+  const reason = readContactReason(req.body);
+  if (!reason) return fail(req, res, 422, "VALIDATION_ERROR", "Lý do truy cập không hợp lệ.");
+  const data = await readContactAccess({
+    caseId: req.params.caseId,
+    userId: req.user._id,
+    role: "ADMIN",
+    reason,
+    requestId: req.requestId,
+  });
+  res.set("Cache-Control", "private, no-store");
+  return success(req, res, data);
+});
 
 module.exports = router;

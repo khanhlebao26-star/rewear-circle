@@ -14,11 +14,17 @@ const auditEventSchema = new mongoose.Schema(
         "LISTING_ADMIN_HIDDEN",
         "LISTING_ADMIN_SHOWN",
         "REPORT_CREATED",
+        "COMPLAINT_CREATED",
+        "LEGACY_CHECKOUT_MIGRATED",
         "CASE_REVIEW_STARTED",
         "CASE_ASSIGNED",
         "CASE_CLOSED",
+        "CASE_DETAIL_READ",
         "CASE_EVIDENCE_READ",
+        "CASE_SNAPSHOT_MEDIA_READ",
         "CASE_CONTACT_ACCESS_READ",
+        "MEDIA_PRIVATE_READ",
+        "CASE_RETENTION_APPLIED",
         "CHECKOUT_CREATED",
         "ORDER_CREATED",
         "ORDER_SHIPPED",
@@ -50,6 +56,7 @@ const auditEventSchema = new mongoose.Schema(
         "LISTING",
         "LISTING_VERSION",
         "REPORT",
+        "COMPLAINT",
         "CASE",
         "MEDIA",
         "CHECKOUT",
@@ -81,6 +88,7 @@ auditEventSchema.pre("validate", function validateActor() {
 });
 
 auditEventSchema.index({ targetType: 1, targetId: 1, createdAt: -1 });
+auditEventSchema.index({ caseId: 1, createdAt: -1 }, { name: "audit_by_case" });
 auditEventSchema.index({ actorId: 1, createdAt: -1 });
 
 module.exports = mongoose.model("AuditEvent", auditEventSchema);

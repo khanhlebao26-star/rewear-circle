@@ -227,6 +227,14 @@ Cập nhật 26/10/2026
 
 Mã xác minh email chỉ lưu hash, dùng một lần, hết hạn và giới hạn số lần gửi. Route đổi dữ liệu bảo vệ CSRF; cookie phiên HttpOnly, Secure và SameSite; giới hạn đăng nhập và upload.
 
-recipientSnapshot chỉ Buyer và Seller của chính Order được đọc. Support phải được giao vụ và truy cập dữ liệu liên hệ/địa chỉ đúng nhu cầu, có audit. Ảnh bằng chứng vụ việc lưu riêng tư; URL truy cập ngắn hạn.
+recipientSnapshot chỉ Buyer và Seller của chính Order được đọc. Support phải được giao vụ và truy cập dữ liệu liên hệ/địa chỉ đúng nhu cầu, có audit. Ảnh bằng chứng vụ việc lưu riêng tư; media ID ổn định không phải grant, mỗi request phải xác minh quyền và ảnh riêng tư dùng `Cache-Control: private, no-store`.
 
 IPN VNPAY phải xác minh chữ ký và đối chiếu mã/số tiền trước cập nhật; QueryDr hỗ trợ đối chiếu khi callback chậm. Không ghi khóa sandbox hoặc dữ liệu thẻ vào log.
+
+## Hợp đồng quyền dữ liệu vụ việc — 29/10/2026
+
+Bước A đã chốt; quyền Support/contact và media Case đã có code ở G/H, regression tích hợp còn ở L. [Báo cáo giao nhận, khiếu nại và vận hành](../report/backend-fulfillment-operations-master-report.md), mục 7–10 và 19–20, quy định DTO/quyền và điểm cấp quyền đọc.
+
+Support chỉ đọc active Case đang được giao; đóng/đổi assignment/mất role thu hồi quyền request sau. Default Case DTO không có recipient address/contact, internalNote chỉ Admin đọc. Contact-access active ORDER Case cần lý do, audit trước response, no-store và không cấp grant lâu dài; audit lỗi không trả PII. REPORT không mở quyền địa chỉ nhận. Admin dùng endpoint contact riêng với cùng audit.
+
+Ảnh evidence không công khai; Support đọc evidence/snapshot hoặc ảnh phiên bản tin liên quan qua Case, không mở quyền toàn Order/Checkout/catalog. Đọc và audit dùng transaction cùng điểm đồng bộ quyền Case/User; request mới sau đổi role/assignment/đóng Case bị kiểm tra lại. Không hứa thu hồi byte đã gửi. Log không chứa request body/header, full URL/query hoặc object lỗi thô. Retention Case không xóa hồ sơ tài chính hoặc ảnh snapshot Order còn cần giữ.

@@ -166,3 +166,13 @@ Các yêu cầu Reliability & Recovery được xem là đã được kiểm ch�
 **Lưu ý:** Có bản sao lưu không đồng nghĩa hệ thống đã khôi phục được thành công. Tương tự, việc ứng dụng hoạt động trở lại không đồng nghĩa dữ liệu đơn hàng và thanh toán đã nhất quán. Cả hai cần được kiểm tra bằng kết quả thực tế.
 
 Cập nhật 26/10/2026: Payment FAILED đã xác minh dẫn Checkout/Order PAYMENT_FAILED; hết hạn sau đối chiếu xác nhận chưa trả dẫn Checkout/Order EXPIRED. Kết quả chưa rõ giữ khóa bán và NEEDS_REVIEW. Buyer có thể mở DELIVERY case trên Order PAID trước khi xác nhận Đã nhận.
+
+## Hợp đồng an toàn giao nhận và vụ việc — 29/10/2026
+
+Nguồn: [báo cáo giao nhận, khiếu nại và vận hành](../report/backend-fulfillment-operations-master-report.md), mục 4, 7 và 11. Bước A chỉ chốt tài liệu; chưa thay đổi tính tin cậy của code hiện tại.
+
+Active Order Case chặn giao/nhận/thu/hủy và bắt đầu hoặc chấp nhận hoàn COD; Admin đóng vụ trước, không cần Order COMPLETED. Đóng không tự sửa Order/Payment hoặc gỡ payment hold. COD đang yêu cầu hoàn có ngoại lệ mở DELIVERY theo điều kiện trong báo cáo; Case mở chặn ACCEPT_RETURN.
+
+Ghi Case và mutation giao/nhận/COD phải chia sẻ điểm ghi có điều kiện trên Order để tránh race giữa snapshot đọc ở các document khác nhau. Audit/notification mutation nằm trong transaction; đọc PII audit lỗi thì không trả dữ liệu. Replay kiểm tra lại quyền và không nhân tác dụng phụ.
+
+Giữ worker VNPAY độc lập, lease/checkpoint bền vững và giới hạn QueryDr hiện có; không giả thất bại khi tắt tích hợp/timeout. Heartbeat worker riêng API readiness, kiểm tra restart/đa worker và retention chạy lại an toàn ở các bước I–L.
