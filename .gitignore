@@ -3,3 +3,7 @@ backend/node_modules/
 backend/src/node_modules/
 backend/uploads/
 plan
+/.env
+frontend/.next/
+frontend/node_modules
+/backups/

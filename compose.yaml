@@ -1,24 +1,329 @@
-name: rewear-circle-src
+name: rewear-circle-demo
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
 
 services:
   mongo:
     image: mongo:8.2.7
     command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
-    ports:
-      - "27017:27017"
     volumes:
-      - rewear-mongo-data:/data/db
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'quit(db.adminCommand({ping:1}).ok === 1 ? 0 : 1)'"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
     restart: unless-stopped
+    logging: *default-logging
+
+  mongo-init:
+    image: mongo:8.2.7
+    environment:
+      REPLICA_MEMBER_HOST: mongo:27017
+    entrypoint:
+      - mongosh
+      - mongodb://mongo:27017/admin?directConnection=true
+      - --quiet
+      - --file
+      - /init/mongo-init.js
+    volumes:
+      - ./docker/mongo-init.js:/init/mongo-init.js:ro
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: "no"
+    logging: *default-logging
 
   mailpit:
     image: axllent/mailpit:latest
     ports:
-      - "8025:8025"
-      - "1025:1025"
+      - "127.0.0.1:8026:8025"
     restart: unless-stopped
+    logging: *default-logging
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      PORT: "4000"
+      NODE_ENV: development
+      MONGODB_URI: "mongodb://mongo:27017/rewear_circle_demo?replicaSet=rs0&directConnection=true"
+      SESSION_SECRET: ${SESSION_SECRET:?Set_SESSION_SECRET_in_root_.env}
+      APP_ORIGIN: http://localhost:3001
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      MAIL_FROM: "Rewear Circle <no-reply@rewear.local>"
+      VNPAY_ENABLED: "false"
+    volumes:
+      - media-data:/app/uploads
+    expose:
+      - "4000"
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+      mailpit:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+    stop_grace_period: 20s
+    logging: *default-logging
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        API_UPSTREAM: http://backend:4000
+    ports:
+      - "127.0.0.1:3001:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+    logging: *default-logging
+
+  backend-dev:
+    profiles: ["dev"]
+    build:
+      context: ./backend
+      target: development
+    environment:
+      PORT: "4000"
+      NODE_ENV: development
+      MONGODB_URI: "mongodb://mongo:27017/rewear_circle_demo?replicaSet=rs0&directConnection=true"
+      SESSION_SECRET: ${SESSION_SECRET:?Set_SESSION_SECRET_in_root_.env}
+      APP_ORIGIN: http://localhost:3011
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      MAIL_FROM: "Rewear Circle <no-reply@rewear.local>"
+      VNPAY_ENABLED: "false"
+    volumes:
+      - ./backend:/app
+      - backend-dev-node-modules:/app/node_modules
+      - media-data:/app/uploads
+    expose:
+      - "4000"
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+      mailpit:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: "no"
+    logging: *default-logging
+
+  frontend-dev:
+    profiles: ["dev"]
+    build:
+      context: ./frontend
+      target: development
+    environment:
+      NODE_ENV: development
+      API_UPSTREAM: http://backend-dev:4000
+    volumes:
+      - ./frontend:/app
+      - frontend-dev-node-modules:/app/node_modules
+    ports:
+      - "127.0.0.1:3011:3000"
+    depends_on:
+      backend-dev:
+        condition: service_healthy
+    restart: "no"
+    logging: *default-logging
+
+  mongo-test:
+    profiles: ["test"]
+    image: mongo:8.2.7
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    volumes:
+      - test-mongo-data:/data/db
+    networks: [test-network]
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'quit(db.adminCommand({ping:1}).ok === 1 ? 0 : 1)'"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+    logging: *default-logging
+
+  mongo-test-init:
+    profiles: ["test"]
+    image: mongo:8.2.7
+    environment:
+      REPLICA_MEMBER_HOST: mongo-test:27017
+    entrypoint:
+      - mongosh
+      - mongodb://mongo-test:27017/admin?directConnection=true
+      - --quiet
+      - --file
+      - /init/mongo-init.js
+    volumes:
+      - ./docker/mongo-init.js:/init/mongo-init.js:ro
+    networks: [test-network]
+    depends_on:
+      mongo-test:
+        condition: service_healthy
+    restart: "no"
+    logging: *default-logging
+
+  test-runner:
+    profiles: ["test"]
+    build:
+      context: ./backend
+    command: ["npm", "test"]
+    environment:
+      NODE_ENV: test
+      MONGODB_TEST_URI: "mongodb://mongo-test:27017/rewear_circle_compose_test?replicaSet=rs0&directConnection=true"
+    networks: [test-network]
+    depends_on:
+      mongo-test-init:
+        condition: service_completed_successfully
+    restart: "no"
+    logging: *default-logging
+
+  maintenance:
+    profiles: ["ops"]
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.maintenance
+    environment:
+      NODE_ENV: development
+      MONGODB_URI: "mongodb://mongo:27017/rewear_circle_demo?replicaSet=rs0&directConnection=true"
+      SESSION_SECRET: ${SESSION_SECRET:?Set_SESSION_SECRET_in_root_.env}
+      APP_ORIGIN: http://localhost:3001
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      MAIL_FROM: "Rewear Circle <no-reply@rewear.local>"
+      VNPAY_ENABLED: "false"
+    volumes:
+      - media-data:/app/uploads
+      - ./backups:/backups
+      - ./.env:/run/config/root.env:ro
+      - ./docker:/opt/rewear-ops:ro
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+    restart: "no"
+    logging: *default-logging
+
+  retention-scheduler:
+    profiles: ["retention"]
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.maintenance
+    command: ["sh", "/opt/rewear-ops/retention-dry-run-loop.sh"]
+    environment:
+      NODE_ENV: development
+      MONGODB_URI: "mongodb://mongo:27017/rewear_circle_demo?replicaSet=rs0&directConnection=true"
+    volumes:
+      - media-data:/app/uploads
+      - ./docker:/opt/rewear-ops:ro
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    logging: *default-logging
+
+  mongo-restore:
+    profiles: ["restore"]
+    image: mongo:8.2.7
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    volumes:
+      - restore-mongo-data:/data/db
+    networks: [restore-network]
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'quit(db.adminCommand({ping:1}).ok === 1 ? 0 : 1)'"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+    logging: *default-logging
+
+  mongo-restore-init:
+    profiles: ["restore"]
+    image: mongo:8.2.7
+    environment:
+      REPLICA_MEMBER_HOST: mongo-restore:27017
+    entrypoint:
+      - mongosh
+      - mongodb://mongo-restore:27017/admin?directConnection=true
+      - --quiet
+      - --file
+      - /init/mongo-init.js
+    volumes:
+      - ./docker/mongo-init.js:/init/mongo-init.js:ro
+    networks: [restore-network]
+    depends_on:
+      mongo-restore:
+        condition: service_healthy
+    restart: "no"
+    logging: *default-logging
+
+  restore:
+    profiles: ["restore"]
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.maintenance
+    command: ["sh", "/opt/rewear-ops/restore.sh"]
+    environment:
+      NODE_ENV: development
+      MONGODB_URI: "mongodb://mongo-restore:27017/?replicaSet=rs0&directConnection=true"
+      RESTORE_ARCHIVE: ${RESTORE_ARCHIVE:-}
+      RESTORE_APPLY: ${RESTORE_APPLY:-0}
+      RESTORE_CONFIRM_ISOLATED: ${RESTORE_CONFIRM_ISOLATED:-}
+    volumes:
+      - restore-media-data:/app/uploads
+      - ./backups:/backups:ro
+      - ./docker:/opt/rewear-ops:ro
+    networks: [restore-network]
+    depends_on:
+      mongo-restore-init:
+        condition: service_completed_successfully
+    restart: "no"
+    logging: *default-logging
+
+networks:
+  test-network:
+    name: rewear-circle-demo-test
+    internal: true
+  restore-network:
+    name: rewear-circle-demo-restore
+    internal: true
 
 volumes:
-  rewear-mongo-data:
-    external: true
-    name: rewear-mongo-data
-
+  mongo-data:
+    name: rewear-circle-demo-mongo-data
+  media-data:
+    name: rewear-circle-demo-media
+  backend-dev-node-modules:
+    name: rewear-circle-demo-backend-dev-node-modules
+  frontend-dev-node-modules:
+    name: rewear-circle-demo-frontend-dev-node-modules
+  test-mongo-data:
+    name: rewear-circle-demo-test-mongo-data
+  restore-mongo-data:
+    name: rewear-circle-demo-restore-mongo-data
+  restore-media-data:
+    name: rewear-circle-demo-restore-media

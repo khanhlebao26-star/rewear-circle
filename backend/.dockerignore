@@ -1,0 +1,8 @@
+.env
+.env.*
+!.env.example
+node_modules
+src/node_modules
+uploads
+coverage
+npm-debug.log*

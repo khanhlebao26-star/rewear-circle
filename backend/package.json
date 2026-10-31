@@ -4,13 +4,13 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node test/domain.test.js && node test/vnpay.test.js && node test/observability.test.js && node test/commerce-flow.test.js && node test/moderation-flow.test.js && node test/retention.test.js",
-    "start": "node --env-file=.env src/server.js",
-    "dev": "node --watch --env-file=.env src/server.js",
-    "seed": "node --env-file=.env src/scripts/seed.js",
-    "audit:fulfillment-data": "node --env-file=.env src/scripts/auditFulfillmentData.js",
-    "migrate:fulfillment-data": "node --env-file=.env src/scripts/migrateFulfillmentData.js",
-    "retention:cases": "node --env-file=.env src/scripts/retainCases.js"
+    "test": "node test/domain.test.js && node test/vnpay.test.js && node test/observability.test.js && node test/discovery-flow.test.js && node test/commerce-flow.test.js && node test/moderation-flow.test.js && node test/retention.test.js",
+    "start": "node --env-file-if-exists=.env src/server.js",
+    "dev": "node --watch --env-file-if-exists=.env src/server.js",
+    "seed": "node --env-file-if-exists=.env src/scripts/seed.js",
+    "audit:fulfillment-data": "node --env-file-if-exists=.env src/scripts/auditFulfillmentData.js",
+    "migrate:fulfillment-data": "node --env-file-if-exists=.env src/scripts/migrateFulfillmentData.js",
+    "retention:cases": "node --env-file-if-exists=.env src/scripts/retainCases.js"
   },
   "keywords": [],
   "author": "",
