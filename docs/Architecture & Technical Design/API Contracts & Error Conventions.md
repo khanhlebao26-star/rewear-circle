@@ -1,10 +1,10 @@
 # **API Contracts & Error Conventions**
 
-Cập nhật 26/10/2026: bổ sung trường giao nhận, xác minh email và affectedOrderItemIds.
+Cập nhật 29/10/2026: bổ sung giao nhận, khiếu nại Order, quyền Support/contact và media riêng tư theo Case.
 
 **Rewear Circle — Technical Documentation**
 
-**Ngày cập nhật:** 24/10/2026**Trạng thái:** Đề xuất triển khai MVP
+**Ngày cập nhật:** 29/10/2026**Trạng thái:** Hợp đồng tổng thể; endpoint tin đăng/kiểm duyệt, giao nhận, khiếu nại, Admin/Support và media Case đã có code. Hồi quy tích hợp và triển khai còn theo dõi ở báo cáo tổng.
 
 ## **1. Mục đích và phạm vi**
 
@@ -20,7 +20,7 @@ Tài liệu mô tả:
 - Những quyết định kỹ thuật cần thống nhất trước khi triển khai.
 Rewear Circle là marketplace C2C dành cho quần áo streetwear secondhand. Người dùng có thể đăng món đồ của mình để bán và mua món đồ từ người dùng khác.
 
-Tài liệu này áp dụng cho MVP phục vụ đồ án. Các đường dẫn API và tên trường là đề xuất kỹ thuật; các quy tắc nghiệp vụ đã thống nhất phải được tuân thủ.
+Tài liệu này áp dụng cho MVP phục vụ đồ án. Trạng thái triển khai được theo dõi trong [báo cáo giao nhận, khiếu nại và vận hành](../report/backend-fulfillment-operations-master-report.md); quy tắc nghiệp vụ đã thống nhất phải được tuân thủ.
 
 ### **1.1. Các mô-đun API**
 
@@ -85,12 +85,7 @@ Không được tin tổng tiền do frontend tự tính và gửi lên.
 
 ### **2.3. Phân trang**
 
-Các API trả về danh sách sử dụng cursor và limit.
-
-- limit: số bản ghi muốn nhận.
-- nextCursor: thông tin để yêu cầu trang tiếp theo.
-- nextCursor = null: không còn trang tiếp theo theo kết quả hiện tại.
-Giới hạn limit tối đa cần được thống nhất sau khi đánh giá nhu cầu và tải hệ thống.
+Các route đã triển khai và hợp đồng giao nhận dùng page/limit: page mặc định 1, limit mặc định 20 và tối đa 100; response meta có page/limit/total. Hàng chờ Case sort updatedAt DESC rồi _id DESC, Complaint sort createdAt DESC rồi _id DESC. Không áp cursor/nextCursor cho các route này; bộ lọc ngoài allowlist trả 422.
 
 ### **2.4. Theo dõi request**
 
@@ -264,6 +259,7 @@ GET /listings
 - Giá được tính bằng VND.
 - Có thể chỉ truyền một trong hai tham số giá.
 - Nếu minPrice > maxPrice, trả VALIDATION_ERROR.
+- Tìm kiếm/lọc cần đăng nhập. Phân trang dùng page/limit, mặc định 20, tối đa 100; chỉ tìm trên revision đang được duyệt.
 Ví dụ:
 
 GET /api/v1/listings?q=vintage&minPrice=100000&maxPrice=300000
@@ -274,8 +270,7 @@ GET /listings/{listingId}
 
 - Guest được xem chi tiết tin công khai.
 - Tin không được duyệt hoặc đang bị ẩn không được trả về như tin công khai.
-- Việc cho phép xem trực tiếp tin đã bán cần được thống nhất trước khi hoàn thiện API.
-- Dù trang chi tiết tin đã bán có được giữ lại hay không, hệ thống không được cho phép mua món đã bán.
+- Tin RESERVED vẫn xem được nhưng không mua thêm; tin SOLD xem được qua liên kết trực tiếp với watermark “Đã bán”, không có nút mua.
 ### **4.2. LST — Tin đăng và duyệt tin**
 
 #### **Tạo tin mới**
@@ -325,6 +320,16 @@ action có thể là HIDE hoặc SHOW.
 - SHOW chỉ xóa trạng thái Seller ẩn khi tin đã được duyệt, món đang AVAILABLE và không có trạng thái ẩn khác hoặc đang chờ duyệt sửa.
 - Seller không được xóa trạng thái ẩn do Admin đặt.
 - Seller không được hiện lại món đang RESERVED hoặc SOLD.
+
+#### **Thông báo kiểm duyệt của Seller**
+
+GET /me/notifications?page={page}&limit={limit}
+
+Trả thông báo nội bộ gắn với người dùng hiện tại, gồm lý do kiểm duyệt, Listing/Version liên quan, `readAt` và tổng số chưa đọc. Mặc định 20 mục/trang, tối đa 100.
+
+PATCH /me/notifications/{notificationId}/read
+
+Chỉ người nhận được đánh dấu đã đọc; thao tác lặp lại trả trạng thái hiện tại. Thông báo không đồng nghĩa email đã được gửi.
 #### **Admin duyệt hoặc từ chối phiên bản tin**
 
 POST /admin/listing-versions/{versionId}/decision
@@ -340,12 +345,14 @@ Request dự kiến:
 }
 
 Quyết định gồm APPROVE hoặc REJECT, kèm lý do phù hợp.
+REJECT bắt buộc có lý do; cập nhật trạng thái revision, Listing, audit và thông báo Seller trong cùng transaction. Revision không còn PENDING trả 409.
 
 #### **Admin ẩn hoặc hiện tin**
 
 POST /admin/listings/{listingId}/visibility
 
 Chỉ Admin có quyền thực hiện. Mỗi quyết định phải lưu người thực hiện, thời điểm và lý do.
+Request gồm action HIDE/SHOW và reason bắt buộc. HIDE có thể kèm `requireCorrection: true` khi không có revision PENDING và món chưa SOLD; SHOW chỉ gỡ cờ `adminHidden`, không xóa `sellerHidden` và không vượt qua trạng thái RESERVED/SOLD, chờ duyệt hoặc khóa điều tra. Cập nhật audit và thông báo Seller nguyên tử với thay đổi Listing.
 
 #### **Giới hạn gửi lại tin**
 
@@ -357,6 +364,8 @@ Chỉ Admin có quyền thực hiện. Mỗi quyết định phải lưu ngườ
 Chi tiết cách phân loại lỗi nhẹ và lỗi nặng phải thống nhất trong Business Rules.
 
 ### **4.3. ORD — Giỏ hàng, checkout và đơn hàng**
+
+Chốt Bước A ngày 28/10/2026: hợp đồng chi tiết ORD/PAY, idempotency, route cũ và trạng thái nằm trong [báo cáo tổng đơn hàng và VNPAY Sandbox](../report/backend-orders-vnpay-sandbox-master-report.md). Các bước D–J đã triển khai; K đã kiểm thử cục bộ trên replica set. Giao dịch Sandbox thật và migration dữ liệu cũ vẫn chưa nghiệm thu. Giỏ giữ đường dẫn thực tế `/cart`, `/cart/items` trong lần triển khai này.
 
 #### **Xem giỏ hàng**
 
@@ -386,6 +395,14 @@ Request dự kiến:
 
 {
 
+"paymentMethod": "VNPAY",
+
+"recipientName": "Người nhận demo",
+
+"recipientPhone": "0900000000",
+
+"recipientAddress": "Địa chỉ giả dùng kiểm thử",
+
 "items": [
 
 {
@@ -412,7 +429,7 @@ Request dự kiến:
 
 }
 
-Request phải có Idempotency-Key.
+Request phải có header Idempotency-Key. Body checkout còn bắt buộc recipientName, recipientPhone và recipientAddress ở cấp cao nhất; cùng payload/key trả Checkout cũ, key trùng với payload khác trả IDEMPOTENCY_CONFLICT. Không nhận body requestKey/listingIds theo hợp đồng mới.
 
 Backend phải kiểm tra lại từng món:
 
@@ -440,6 +457,8 @@ Response dự kiến gồm:
 - currency
 - expiresAt
 - Danh sách orderId
+
+Checkout bắt đầu PENDING_PAYMENT, Order PENDING; dọn các món đã chọn khỏi giỏ trong cùng transaction tạo. Không SOLD tại bước này. Route cũ POST /checkouts/{checkoutId}/confirm sẽ trả 410 ENDPOINT_RETIRED sau khi chuyển đổi; chỉ kết quả cổng đã xác minh mới thực hiện settlement.
 #### **Xem checkout**
 
 GET /checkouts/{checkoutId}
@@ -510,7 +529,7 @@ Thanh toán riêng giữa Buyer và Seller bên ngoài hệ thống không làm 
 
 POST /reports/listings
 
-Yêu cầu đăng nhập.
+Yêu cầu đăng nhập và xác minh email; người báo không được là chủ Listing. Giới hạn 5 báo cáo/ngày theo tài khoản.
 
 Request gồm:
 
@@ -518,6 +537,9 @@ Request gồm:
 - reasonCode
 - Mô tả bổ sung nếu có
 - Bằng chứng nếu có
+reasonCode dùng tập INACCURATE_OR_INCOMPLETE, SUSPECTED_COUNTERFEIT, PROHIBITED_OR_INAPPROPRIATE, OFFENSIVE_CONTENT, DUPLICATE_OR_SPAM, SUSPECTED_SCAM, OTHER; OTHER bắt buộc details. Evidence là 0–5 ID ảnh CASE_EVIDENCE do chính người báo tải lên.
+
+Report gốc được lưu riêng và gắn với Case REPORT đang mở theo Listing; Case đã đóng không bị mở lại, report tiếp theo tạo Case mới. Tạo Report, Case, audit và thông báo tiếp nhận là một transaction. Backend tự lấy reporterId từ session.
 Đây là báo cáo về tin đăng, thường được tạo trước khi mua hàng.
 
 #### **Khiếu nại đơn hàng**
@@ -537,6 +559,10 @@ Admin có thể xem danh sách vụ việc và chi tiết vụ việc theo quy�
 Nhiều báo cáo liên quan cùng một tin hoặc đơn có thể được nhóm lại để điều tra. Tuy nhiên, từng báo cáo gốc phải được lưu riêng.
 
 Nhân viên hỗ trợ chỉ được xem vụ việc được giao và dữ liệu cần thiết. Việc truy cập thông tin liên hệ hoặc địa chỉ phải có lý do và được ghi log.
+
+Trong phạm vi Report tin, POST /admin/cases/{caseId}/decisions chỉ cho phép OPEN→IN_REVIEW→CLOSED. Đóng cần outcomeCode và outcomeSummary; CORRECTION_REQUIRED/LISTING_HIDDEN có thể gọi chung quy tắc Admin HIDE trong cùng transaction. Người báo nhận outcomeSummary qua thông báo nội bộ; internalNote chỉ Admin xem.
+
+POST /media/upload-requests nhận multipart `purpose=LISTING|CASE_EVIDENCE` (mặc định LISTING). CASE_EVIDENCE không công khai; đọc cần quyền người tải lên hoặc liên kết Case được phép. Buyer/Seller của Checkout/Order có thể đọc ảnh nằm trong snapshot giao dịch của họ.
 
 ## **5. Quy tắc dữ liệu phải luôn đúng**
 
@@ -662,7 +688,7 @@ ACC: MVP yêu cầu email thông thường được xác minh, không bắt bu�
 
 LST: mỗi tin chỉ có một revision PENDING; Seller có thể gửi form sửa khi món RESERVED nhưng snapshot đơn hiện tại không đổi; tin SOLD không nhận sửa. Cập nhật đồng thời kiểm tra version. Tin PENDING/REJECTED/ẩn không mở công khai; người đã đăng nhập tìm tên/mô tả, sắp xếp mới nhất, mặc định 20 kết quả/trang.
 
-ORD bổ sung POST /checkouts/{checkoutId}/cancel (Buyer, chỉ trước payment attempt đầu tiên) và POST /orders/{orderId}/receipt-confirmation (Buyer, xác nhận đã nhận và chuyển COMPLETED). Hai route cần Idempotency-Key hoặc cơ chế tương đương để chống xử lý lặp; quyền và trạng thái kiểm tra tại server.
+ORD bổ sung POST /checkouts/{checkoutId}/cancel (Buyer, chỉ trước payment attempt đầu tiên), PUT /orders/{orderId}/shipment (Seller ghi carrierName/trackingCode) và POST /orders/{orderId}/receipt-confirmation (Buyer xác nhận đã nhận và chuyển COMPLETED). Các route kiểm tra quyền/trạng thái tại server; thao tác POST dùng Idempotency-Key, vận đơn lặp đúng dữ liệu được trả lại như cùng kết quả.
 
 MOD dùng **ba bộ lý do** đã chốt: báo Listing trước mua, khiếu nại DELIVERY và khiếu nại ITEM. Hai loại khiếu nại Order dùng chung endpoint nhưng có điều kiện trạng thái, lý do và yêu cầu chọn món khác nhau. Case đi qua OPEN → IN_REVIEW → CLOSED và lưu kết quả xử lý.
 
@@ -674,8 +700,28 @@ Hợp đồng xác minh email: POST /auth/verify-email và /auth/resend-verifica
 
 Hợp đồng checkout: recipientName, recipientPhone, recipientAddress bắt buộc. Response Order chỉ lộ recipientSnapshot cho Buyer và Seller của chính Order; Support được giao vụ chỉ xem khi cần, truy cập ghi audit.
 
-Hợp đồng MOD-02: complaintType DELIVERY | ITEM. DELIVERY chỉ trên PAID, affectedOrderItemIds rỗng/không gửi. ITEM chỉ sau COMPLETED, affectedOrderItemIds không rỗng và thuộc Order; đối chiếu snapshot. Lỗi sai phạm vi trả VALIDATION_ERROR hoặc FORBIDDEN theo nguyên nhân.
+Hợp đồng MOD-02 hiện dùng field `type` (DELIVERY | ITEM), không phải `complaintType`. Buyer sở hữu Order gửi với Idempotency-Key; DELIVERY áp dụng ma trận VNPAY/COD và cấm hẳn `affectedOrderItemIds`; ITEM chỉ sau COMPLETED, chọn 1–20 OrderItem ID đúng đơn. Details dài 10–2000 ký tự, evidence tối đa 5 ảnh CASE_EVIDENCE của người gửi. Response và lỗi theo hợp đồng 29/10/2026 bên dưới.
 
-Hợp đồng shipment: Seller của Order PAID gửi carrierName/trackingCode; Buyer xem tình trạng và có thể báo chưa gửi/chưa đến.
+Hợp đồng shipment: Seller của Order đủ điều kiện giao gửi carrierName/trackingCode; Order VNPAY cần PAID, Order COD có thể CONFIRMED/UNPAID. Buyer xem tình trạng và có thể báo chưa gửi/chưa đến.
 
 VNPAY IPN là GET; backend trả JSON RspCode và Message theo tài liệu cổng sau khi xác minh checksum và đối chiếu giao dịch.
+
+## Bổ sung hợp đồng COD — 28/10/2026
+
+Hợp đồng A-09 tại [báo cáo tổng đơn hàng](../report/backend-orders-vnpay-sandbox-master-report.md) là nguồn request/response/quyền/ma trận COD. Các quy định chỉ xác minh cổng mới PAID/SOLD và một attempt tổng ở các mục trước áp dụng VNPAY; COD chốt quyền mua SOLD nhưng UNPAID khi đặt, thu riêng từng Order bằng khai báo Seller có nguồn/audit.
+
+POST /checkouts yêu cầu paymentMethod=VNPAY|COD trong fingerprint; không trộn hoặc đổi phương thức trên một Checkout. COD tạo CONFIRMED với expiresAt=null. Tạo attempt cho COD trả 409 PAYMENT_METHOD_NOT_SUPPORTED; trạng thái thanh toán COD trả summary theo các Order, không trả NOT_STARTED như thể phải tạo URL VNPAY.
+
+API COD (hủy Order, collection, return-request, Admin return-decision, danh sách collection/return cho Admin) cùng quy tắc idempotency, trạng thái, body và quyền được liệt kê trong A-09. Seller COD được đọc địa chỉ/giao trước thu khi canFulfill; Buyer receipt không tự collection. Backend không tuyên bố xác minh COD qua ngân hàng hoặc hãng giao hàng; demo không chuyển tiền thật.
+
+Triển khai D–J: POST /checkouts tạo Checkout/Order theo COD hoặc VNPAY; GET /me/checkouts, GET /checkouts/{id}, GET /checkouts/{id}/payment và GET /me/orders có phân trang/kiểm quyền. POST /checkouts/{id}/payment-attempts tạo một attempt VNPAY; COD trả 409. IPN và QueryDr dùng settlement chung; worker chạy bằng `npm run worker:vnpay`. Admin tra cứu payment qua GET /admin/payments và GET /admin/payments/{id}, không có API tự đánh dấu PAID. Kiểm thử K đạt trên replica set dành riêng cho test; giao dịch Sandbox thật và migration dữ liệu cũ còn mở.
+
+## Hợp đồng giao nhận, khiếu nại và Support — 29/10/2026
+
+Bước A đã chốt hợp đồng; E/F triển khai khiếu nại và xử lý Admin, G/H triển khai Support/contact, media Case và DTO notification. Regression còn ở Bước L. Nguồn đầy đủ request/response/DTO/error/idempotency/quyền/audit: [báo cáo giao nhận, khiếu nại và vận hành](../report/backend-fulfillment-operations-master-report.md), mục 3–10 và 19–20.
+
+Route chuẩn là PUT /orders/{id}/shipment, POST /orders/{id}/receipt-confirmation, POST/GET /orders/{id}/complaints và GET /orders/{id}/complaints/{complaintId}; Admin/Support dùng route Case như API Routes. Contact-access là POST có reason và kiểm tra/audit mỗi lần đọc, không response grant lâu dài.
+
+Mutation mới yêu cầu Idempotency-Key 8–100 ký tự [A-Za-z0-9_-]. Assignment và quyết định DELIVERY/ITEM có expectedVersion để chặn stale form. Shipment PUT idempotent theo hãng/mã; REPORT decisions giữ body cũ tương thích, key/version là tùy chọn nhưng nếu gửi phải kiểm tra. Replay luôn kiểm tra quyền hiện tại, không trả PII cache từ lần trước.
+
+Order Case mới có payload/outcome riêng, không nhận listingAction. Nội dung đã retention trả 410 CONTENT_REDACTED, tài nguyên ngoài quyền trả 404, audit đọc PII thất bại trả 503 AUDIT_UNAVAILABLE. Không thêm trường retryable bắt buộc hoặc đổi response helper trong bước A.

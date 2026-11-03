@@ -6,7 +6,20 @@ const path = require("node:path");
 const User = require("../models/User");
 const Listing = require("../models/Listing");
 const Media = require("../models/Media");
-const { Cart, Checkout, Order } = require("../models/commerce");
+const Complaint = require("../models/Complaint");
+const Report = require("../models/Report");
+const Case = require("../models/Case");
+const AuditEvent = require("../models/AuditEvent");
+const Notification = require("../models/Notification");
+const {
+  Cart,
+  Checkout,
+  Order,
+  PaymentAttempt,
+  PaymentEvent,
+  CodCollection,
+  CodReturnRequest,
+} = require("../models/commerce");
 
 function id(group, number) {
   return new mongoose.Types.ObjectId(group + String(number).padStart(23, "0"));
@@ -20,7 +33,23 @@ async function main() {
   await mongoose.connect(process.env.MONGODB_URI);
 
   await Promise.all(
-    [User, Listing, Media, Cart, Checkout, Order].map((Model) => Model.init()),
+    [
+      User,
+      Listing,
+      Media,
+      Complaint,
+      Report,
+      Case,
+      AuditEvent,
+      Notification,
+      Cart,
+      Checkout,
+      Order,
+      PaymentAttempt,
+      PaymentEvent,
+      CodCollection,
+      CodReturnRequest,
+    ].map((Model) => Model.init()),
   );
 
   const password = "RewearDemo123!";
@@ -47,7 +76,7 @@ async function main() {
           emailVerifiedAt: new Date(),
         },
       },
-      { upsert: true, new: true, runValidators: true },
+      { upsert: true, returnDocument: "after", runValidators: true },
     );
   }
 
@@ -85,7 +114,7 @@ async function main() {
   ];
 
   for (const [index, row] of rows.entries()) {
-    const [key, seller, title, price, approved, sold] = row;
+    const [, seller, title, price, approved, sold] = row;
     const versionId = id("4", index + 1);
 
     await Listing.updateOne(
@@ -122,7 +151,6 @@ async function main() {
       { upsert: true, runValidators: true },
     );
 
-    console.log(key, String(id("2", index + 1)), seller, price);
   }
 
   for (const key of ["buyer1", "buyer2"]) {
@@ -138,18 +166,19 @@ async function main() {
     );
   }
 
-  console.table(
-    accounts.map(([key]) => ({
-      email: `${key}@rewear.local`,
-      password,
-      userId: String(users[key]._id),
-    })),
-  );
+  console.log(JSON.stringify({ event: "seed_completed", level: "info", userCount: accounts.length, listingCount: rows.length }));
 }
 
 main()
   .catch((error) => {
-    console.error(error);
+    console.error(JSON.stringify({
+      event: "seed_failed",
+      level: "error",
+      errorType: error.name || "Error",
+      errorCode: typeof error.code === "string" && /^[A-Z0-9_]{1,64}$/.test(error.code)
+        ? error.code
+        : "SEED_FAILED",
+    }));
     process.exitCode = 1;
   })
   .finally(() => mongoose.disconnect());

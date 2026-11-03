@@ -191,6 +191,31 @@ User có emailVerifiedAt (ban đầu rỗng). EmailVerificationToken chỉ lưu 
 
 Checkout lưu recipientName, recipientPhone và recipientAddress do Buyer nhập. Mỗi Order theo Seller có recipientSnapshot riêng, carrierName, trackingCode, shippedAt và receivedAt; Seller chỉ thấy Order của mình.
 
-Complaint gắn orderId, buyerId, type DELIVERY hoặc ITEM. DELIVERY áp dụng PAID và toàn Order. ITEM áp dụng COMPLETED, có affectedOrderItemIds không rỗng; mọi ID phải thuộc Order. Điều tra dùng OrderItem snapshot, không dùng Listing đang thay đổi.
+Complaint gắn orderId, buyerId, caseId, type DELIVERY hoặc ITEM. DELIVERY theo ma trận VNPAY/COD và toàn Order, không chỉ PAID. ITEM áp dụng COMPLETED, có affectedOrderItemIds không rỗng; mọi ID phải thuộc Order. Điều tra dùng OrderItem snapshot, không dùng Listing đang thay đổi.
 
 OrderStatus có PAYMENT_FAILED bên cạnh EXPIRED. Checkout PAYMENT_FAILED/EXPIRED và các Order PENDING cùng Checkout cập nhật nhất quán sau khi kết quả chưa trả được xác minh.
+
+## Bổ sung mô hình COD — 28/10/2026
+
+Checkout/Order bắt buộc paymentMethod=VNPAY|COD, cố định từ lúc đặt. Các quy tắc attempt tổng, giữ 15 phút và SOLD sau xác minh cổng trong mô hình trên áp dụng VNPAY. COD chốt SOLD/CONFIRMED/UNPAID khi đặt, expiresAt=null và không tạo Payment VNPAY.
+
+COD có collection theo Order (tối đa một hiệu lực): amount/currency, Seller ghi nhận, source=SELLER_DECLARATION, recordedAt, requestId và idempotency. Yêu cầu hoàn có Order/Seller/reason, thời điểm và quyết định Admin; một yêu cầu mở/Order. Order có CONFIRMED/RETURNED và paymentStatus riêng; Checkout tổng hợp collectibleAmount/collectedAmount/outstandingAmount từ các Order mà không ghi đè tổng snapshot gốc. Schema Mongoose cho collection/return đã được thêm; route ghi nhận/ra quyết định thuộc các bước sau.
+
+Seller chỉ đọc địa chỉ đơn COD của mình khi được giao, không đọc Checkout/Order Seller khác. Shipment/receipt hỗ trợ COD CONFIRMED; DELIVERY nhận cả đơn COD chưa nhận, ITEM sau COMPLETED. Mọi quy tắc thu/hủy/hoàn và hold theo [hợp đồng A-09](../report/backend-orders-vnpay-sandbox-master-report.md).
+
+## Bổ sung schema thanh toán — 28/10/2026
+
+`PaymentAttempt` là hồ sơ VNPAY duy nhất cho một Checkout, có unique Checkout/merchantReference/idempotency key và thông tin checkpoint/lease đối chiếu. `PaymentEvent` lưu field đã lọc cùng kết quả kiểm tra và hash payload; không lưu callback thô. `Order.items` có `_id` ổn định cho khiếu nại. Listing giữ `soldCheckoutId` và danh sách Checkout đang payment review. AuditEvent phân biệt actor USER/PROVIDER/SYSTEM.
+
+Checkout/Order hỗ trợ `contractVersion=1` để đọc và ghi tương thích trong lúc chuyển đổi; Checkout/Order version 2 kiểm tra bắt buộc các trường hợp đồng mới. Các schema/index definitions và migration plan đã có trong repo; chưa xác nhận index tạo trên MongoDB, chưa backfill hoặc thay đổi dữ liệu cũ.
+
+## Hợp đồng dữ liệu giao nhận và khiếu nại — 29/10/2026
+
+Bước A chốt mô hình đích; schema/index và migration dữ liệu cũ được triển khai ở Bước B trên MongoDB local, backup và audit hậu kiểm đã đạt. Listing SOLD không có Order liên kết được giữ nguyên vì chưa đủ căn cứ để gán Checkout. Chi tiết: [báo cáo giao nhận, khiếu nại và vận hành](../report/backend-fulfillment-operations-master-report.md), mục 14.
+
+- Complaint lưu riêng với Report: Order/Buyer/Seller/Case, type/reason/details, affected OrderItem IDs, evidence và snapshot lúc gửi; không đặt listingId giả. Snapshot từ Order, không đọc lại Listing hiện tại, không sao chép địa chỉ vào Complaint.
+- Case giữ unique active target, version nghiệp vụ, assignment/decision history; SUPPORT không có quyền thay đổi. ComplaintQuota lưu các mốc gửi trong cửa sổ trượt 24 giờ; unique Buyer và optimistic concurrency giúp quota dùng chung giữa các Order. Tạo/đóng Order Case dùng Order `__v` gate chung với giao/nhận/thanh toán/COD để chống race.
+- Idempotency có scope actor/operation/target/key, fingerprint chuẩn hóa và bảo vệ trùng bền vững. Replay không cấp lại quyền dữ liệu đã mất và không tạo tác dụng phụ mới.
+- Notification hỗ trợ đúng target Order/complaint hoặc Listing/report, không bắt buộc listingId giả cho khiếu nại đơn; đóng vụ unique recipient/Case/type.
+- Quyền ảnh evidence/snapshot theo Case không mở quyền toàn Order/Checkout; contact chỉ qua endpoint đọc có lý do/audit. Dữ liệu nhạy cảm không nằm trong DTO Case mặc định.
+- Hồ sơ/bằng chứng Case giữ 12 tháng sau đóng rồi xóa/ẩn danh phần hết hạn; kiểm tra media dùng chung và giữ dữ liệu Order/Payment theo chính sách riêng.

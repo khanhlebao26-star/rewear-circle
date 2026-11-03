@@ -81,7 +81,7 @@ Nhà cung cấp dịch vụ thanh toán xử lý thông tin thanh toán nhạy c
 - **Tạo, chỉnh sửa và ẩn** danh sách.
 - Trang **chi tiết sản phẩm** với thông tin được cấu trúc rõ ràng.
 - **Tạo đơn hàng và hiển thị trạng thái** đơn hàng.
-- Tích hợp **quy trình thanh toán** với một nhà cung cấp dịch vụ thanh toán duy nhất ở chế độ thử nghiệm/sandbox.
+- Hai phương thức cho MVP: VNPAY Sandbox và COD (thanh toán khi nhận từng đơn theo Seller, mô phỏng thu tiền trong demo). VNPAY là nhà cung cấp thanh toán trực tuyến duy nhất.
 - Xác minh cuộc gọi lại/webhook và xử lý trạng thái thanh toán.
 - Các tính năng cơ bản gồm hồ sơ người dùng, báo cáo tin trước mua, khiếu nại DELIVERY/ITEM, kiểm duyệt và hỗ trợ xem xét thủ công; không bao gồm hoàn tiền tự động toàn diện.
 ### **Ngoài phạm vi**
@@ -90,7 +90,7 @@ Nhà cung cấp dịch vụ thanh toán xử lý thông tin thanh toán nhạy c
 - Phân tích giá tự động.
 - Xác thực thương hiệu tự động.
 - Nhiều nhà cung cấp dịch vụ thanh toán.
-- Thanh toán khi nhận hàng nếu không có giải pháp tích hợp phù hợp.
+- Thu hộ/đối soát COD tự động qua ngân hàng hoặc hãng vận chuyển; COD trong MVP chỉ ghi nhận thủ công có nguồn và lịch sử.
 - Đối chiếu tự động nâng cao.
 - Quản lý khiếu nại và hoàn tiền tự động toàn diện.
 - Dịch vụ vận chuyển tích hợp và ký quỹ sản phẩm.

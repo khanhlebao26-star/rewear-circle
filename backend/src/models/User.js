@@ -13,6 +13,7 @@ const userSchema = new mongoose.Schema(
     displayName: { type: String, required: true, trim: true },
     avatar: { type: String, default: null },
     role: { type: String, enum: ["USER", "ADMIN", "SUPPORT"], default: "USER" },
+    caseAccessFence: { type: Number, default: 0, select: false },
     emailVerifiedAt: { type: Date, default: null },
     verificationHash: { type: String, default: null },
     verificationExpiresAt: { type: Date, default: null },

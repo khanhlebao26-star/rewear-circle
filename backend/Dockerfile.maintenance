@@ -1,0 +1,22 @@
+FROM mongo:8.2.7 AS mongo-tools
+
+FROM node:24-bookworm-slim
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgssapi-krb5-2 ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=mongo-tools /usr/bin/mongodump /usr/local/bin/mongodump
+COPY --from=mongo-tools /usr/bin/mongorestore /usr/local/bin/mongorestore
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+
+COPY src ./src
+COPY test ./test
+RUN mkdir -p uploads && chown -R node:node /app
+
+ENV NODE_ENV=development
+USER node
+CMD ["node", "--version"]

@@ -1,27 +1,14 @@
 const User = require("../models/User");
+const { failure } = require("../http/responses");
 
 async function requireAuth(req, res, next) {
   if (!req.session.userId) {
-    return res.status(401).json({
-      error: {
-        code: "UNAUTHORIZED",
-        message: "Vui lòng đăng nhập.",
-        retryable: false,
-      },
-      meta: { requestId: req.requestId },
-    });
+    return failure(req, res, 401, "UNAUTHORIZED", "Vui lòng đăng nhập.");
   }
 
   const user = await User.findById(req.session.userId);
   if (!user) {
-    return res.status(401).json({
-      error: {
-        code: "UNAUTHORIZED",
-        message: "Phiên đăng nhập không hợp lệ.",
-        retryable: false,
-      },
-      meta: { requestId: req.requestId },
-    });
+    return failure(req, res, 401, "UNAUTHORIZED", "Phiên đăng nhập không hợp lệ.");
   }
 
   req.user = user;
@@ -30,16 +17,32 @@ async function requireAuth(req, res, next) {
 
 function requireVerifiedEmail(req, res, next) {
   if (!req.user.emailVerifiedAt) {
-    return res.status(403).json({
-      error: {
-        code: "EMAIL_NOT_VERIFIED",
-        message: "Hãy xác minh email trước.",
-        retryable: false,
-      },
-      meta: { requestId: req.requestId },
-    });
+    return failure(req, res, 403, "EMAIL_NOT_VERIFIED", "Hãy xác minh email trước.");
   }
   next();
 }
 
-module.exports = { requireAuth, requireVerifiedEmail };
+function requireRole(...roles) {
+  return (req, res, next) => {
+    if (!req.user) {
+      return failure(req, res, 401, "UNAUTHORIZED", "Vui lòng đăng nhập.");
+    }
+
+    if (!roles.includes(req.user.role)) {
+      return failure(req, res, 403, "FORBIDDEN", "Bạn không có quyền thực hiện thao tác này.");
+    }
+
+    next();
+  };
+}
+
+const requireAdmin = requireRole("ADMIN");
+const requireSupport = requireRole("SUPPORT");
+
+module.exports = {
+  requireAuth,
+  requireVerifiedEmail,
+  requireRole,
+  requireAdmin,
+  requireSupport,
+};

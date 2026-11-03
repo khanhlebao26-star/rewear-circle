@@ -297,7 +297,7 @@ MVP sử dụng một danh sách quản lý Case dành cho Admin, gồm hai nhó
 | **Loại Case** | **Mục đích** | **Thời điểm** |
 | --- | --- | --- |
 | REPORT | Báo cáo Listing có nội dung không phù hợp hoặc vi phạm quy định. | Trước khi mua hoặc trong quá trình Listing còn liên quan đến hoạt động trên nền tảng. |
-| DELIVERY | Khiếu nại về việc Seller chưa gửi hàng hoặc Buyer chưa nhận được hàng. | Sau khi Order được thanh toán, trong quá trình giao nhận. |
+| DELIVERY | Khiếu nại Seller chưa gửi hoặc Buyer chưa nhận. | VNPAY PAID/PAID hoặc COD trước nhận theo ma trận 29/10/2026, gồm ngoại lệ COD return được quy định riêng. |
 | ITEM | Khiếu nại về tình trạng hoặc vấn đề của sản phẩm đã nhận. | Chỉ sau khi Order chuyển sang COMPLETED. |
 
 DELIVERY và ITEM là các loại khiếu nại sau mua. Chúng không tự động thay đổi trạng thái Payment hoặc Order.
@@ -344,7 +344,7 @@ Những sự kiện này không được phép làm thay đổi Payment, Checkou
 ### **7.3. Xử lý kết quả chưa rõ**
 
 - Tra cứu trạng thái giao dịch bằng cơ chế được VNPAY hỗ trợ.
-- Thực hiện các lần đối chiếu theo mốc 1, 3 và 5 phút đã quy định.
+- Tạo checkpoint nội bộ tại +1, +3 và +5 phút. Vì QueryDr trả mã 94 nếu request trùng trong cửa sổ 5 phút, chỉ gọi API theo khoảng tối thiểu được cổng cho phép; checkpoint giữa kiểm tra IPN đến mới và không suy diễn rằng chưa trả.
 - Nếu vẫn chưa xác định được kết quả, đưa Checkout và các Order liên quan vào NEEDS_REVIEW.
 - Giữ khóa bán và giao sản phẩm cho đến khi có quyết định xử lý an toàn.
 - Ghi lại thông tin chẩn đoán cần thiết để phục vụ điều tra.
@@ -370,6 +370,10 @@ Bảng này là nguồn đối chiếu nhanh cho đội phát triển khi triể
 | Kết quả thanh toán chưa rõ hoặc có xung đột | Thêm paymentReviewHold |
 
 ### **8.2. Checkout**
+
+**Phạm vi:** Các bảng Checkout/Order/Payment dưới đây mô tả VNPAY. Nhánh COD được bổ sung tại mục 10, không áp dụng timer/QueryDr hoặc điều kiện PAID trước giao của VNPAY.
+
+Hợp đồng triển khai chi tiết được chốt tại [báo cáo đơn hàng và VNPAY Sandbox](../report/backend-orders-vnpay-sandbox-master-report.md). Mốc đối chiếu tính tuyệt đối từ expiresAt: lần đầu khi hết hạn rồi +1, +3, +5 phút. Chưa có attempt thì hết hạn sau kiểm tra nguyên tử; đã có attempt mà QueryDr chưa rõ thì tiếp tục khóa. NEEDS_REVIEW có thể trở lại PAID từ bằng chứng cổng hợp lệ khi mọi xung đột được giải quyết; SUCCESS tài chính không bị hạ bởi sự kiện cũ.
 
 PENDING_PAYMENT → PAID | PAYMENT_FAILED | EXPIRED | CANCELLED | NEEDS_REVIEW
 
@@ -426,3 +430,30 @@ OPEN → IN_REVIEW → CLOSED
 - Buyer xác nhận đã nhận hàng để Order chuyển sang COMPLETED.
 - Báo cáo Listing và khiếu nại DELIVERY/ITEM được quản lý qua Case. Việc xử lý Case không tự động thay đổi Payment hoặc Order.
 - VNPAY Sandbox là cổng mục tiêu; việc ánh xạ mã phản hồi cụ thể phải được xác nhận qua tài liệu tích hợp và kiểm thử thực tế trong Sandbox.
+
+## 10. Bổ sung 28/10/2026 — COD
+
+Hợp đồng chi tiết tại [A-09 báo cáo tổng đơn hàng](../report/backend-orders-vnpay-sandbox-master-report.md). Luồng COD D–E đã triển khai và kiểm thử cùng K; xác nhận thu là khai báo của Seller, không phải bằng chứng ngân hàng/hãng vận chuyển.
+
+| Đối tượng | Chuyển trạng thái COD |
+| --- | --- |
+| Checkout | Tạo CONFIRMED; NEEDS_REVIEW nếu có đơn bị điều tra; CANCELLED khi tất cả Order CANCELLED/RETURNED; không dùng PAID để suy ra đã giao |
+| Order | Tạo CONFIRMED; trước gửi/chưa thu/không hold có thể CANCELLED; Buyer xác nhận nhận sau gửi thì COMPLETED; hoàn/tranh chấp qua NEEDS_REVIEW, chỉ hoàn đủ và chưa thu mới RETURNED |
+| Thu tiền Order | UNPAID → COLLECTED do Seller khai báo; NOT_DUE khi hủy/hoàn hợp lệ; NEEDS_REVIEW nếu tranh chấp; không đồng nghĩa Payment SUCCESS của VNPAY |
+| Listing | AVAILABLE → SOLD lúc tạo Order COD; chỉ trả AVAILABLE khi hủy trước gửi hoặc hoàn được duyệt, đúng quyền và không xung đột; không xóa các cờ kiểm duyệt |
+
+COD không tạo payment attempt, không có expiresAt và không đi vào job VNPAY 15 phút/QueryDr. Checkout COD nhiều Seller tổng hợp tiền từ từng collection; việc nhận hàng và thu tiền độc lập. Quyền giao COD dựa CONFIRMED và không hold, VNPAY dựa PAID và không hold. Không nhận hàng hoặc hoàn chưa về không tự giải phóng món.
+
+## 11. Trạng thái triển khai F–K — 29/10/2026
+
+Backend tạo một payment attempt VNPAY cho mỗi Checkout, nhận IPN và đối chiếu QueryDr qua cùng transaction settlement. Worker dùng lịch/checkpoint và lease lưu trong DB; timeout, mã 94 và kết quả chưa rõ không mở bán lại. Kết quả SUCCESS đến muộn vẫn được ghi nhận; xung đột quyền nhận chuyển Checkout/Order sang NEEDS_REVIEW và giữ `paymentReviewHold` để chặn bán/giao. K đã chạy trên MongoDB replica set riêng cho test. Giao dịch Sandbox thật, xác minh mapping thực tế và migration DB cũ chưa hoàn tất; xem [báo cáo tổng](../report/backend-orders-vnpay-sandbox-master-report.md).
+
+## Hợp đồng vòng đời giao nhận/Case — 29/10/2026
+
+Bước A đã chốt, chưa chứng nhận các tính năng mới đã triển khai. Nguồn: [báo cáo giao nhận, khiếu nại và vận hành](../report/backend-fulfillment-operations-master-report.md), mục 4, 6 và 7.
+
+- Giữ một active Case/target. Thêm bản gốc cùng loại không đổi type/status; khác loại trả conflict. CLOSED không reopen; tạo vụ mới theo điều kiện hiện tại và cooldown cùng loại 24 giờ.
+- Case OPEN/IN_REVIEW chặn giao/receipt/thu/hủy/bắt đầu hoặc chấp nhận hoàn COD. Admin đóng vụ không cần Order COMPLETED; đóng vụ chỉ thu hồi ràng buộc hỗ trợ, không tự gỡ hold tài chính hoặc hoàn tất đơn.
+- Shipment chỉ ghi lần đầu hãng/mã và shippedAt, không thêm Order status SHIPPED. VNPAY giao/nhận cần PAID/PAID; COD CONFIRMED đủ điều kiện theo ma trận. Buyer xác nhận sau gửi chuyển COMPLETED, giữ nguyên paymentStatus COD.
+- DELIVERY cho COD NEEDS_REVIEW chỉ áp dụng nhánh yêu cầu hoàn đúng Order OPEN/REJECTED, UNPAID/chưa thu/chưa nhận và quyền món an toàn. Case chặn ACCEPT_RETURN; đóng Case không tự khôi phục CONFIRMED hoặc tạo quyền nhận hàng.
+- Assignment chỉ active Case, không tự IN_REVIEW. Support mất quyền qua Case khi CLOSED hoặc mất assignment/role; Admin đọc hồ sơ trong thời hạn lưu. Outcome Order Case không có hành động tài chính/Listing.

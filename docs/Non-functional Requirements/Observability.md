@@ -108,7 +108,7 @@ Các mốc lưu trữ đã chốt và đang đề xuất cho MVP:
 - **Hồ sơ tài chính:** Áp dụng chính sách lưu trữ riêng, phù hợp với yêu cầu quản lý và quy định liên quan.
 Log không được chứa mật khẩu, token xác thực, dữ liệu thẻ thanh toán hoặc thông tin riêng tư không cần thiết.
 
-Thời gian lưu hồ sơ vụ việc và bằng chứng **12 tháng sau khi đóng vụ đã được chốt**. Thời gian lưu log kỹ thuật **30 ngày vẫn là đề xuất** và cần xác nhận theo môi trường triển khai. Hồ sơ tài chính có chính sách lưu trữ riêng, chưa chốt trong tài liệu này.
+Thời gian hồ sơ/bằng chứng 12 tháng sau đóng đã chốt; Bước A giao nhận 29/10/2026 chốt log kỹ thuật staging/demo 30 ngày. Hồ sơ tài chính giữ chính sách riêng; không áp retention Case/log cho Order/Payment.
 
 ## **5. Kiểm chứng tối thiểu**
 
@@ -120,6 +120,12 @@ Cần thực hiện ít nhất bốn tình huống kiểm thử sau:
 - **Nhiều báo cáo cùng một món hàng:** Xác nhận các báo cáo được liên kết đúng vụ việc nhưng vẫn giữ riêng người gửi, lý do và bằng chứng.
 **Tiêu chí đạt:** Với các mã định danh liên quan, có thể giải thích được ai đã thực hiện hành động gì, vào thời điểm nào và hệ thống đã xử lý ra sao. Quá trình điều tra không được làm lộ dữ liệu nhạy cảm.
 
+## **Trạng thái triển khai hiện tại — 31/10/2026**
+
+API ghi JSON một dòng gồm requestId, method, route template, statusCode, durationMs và mã lỗi chuẩn hóa. Không log query string, body, header, cookie, stack hoặc object Error. Startup, seed, audit/migration và worker cũng dùng field allowlist; seed không in mật khẩu demo. Worker VNPAY có workerId/runId, heartbeat độc lập và số cycle lỗi liên tiếp.
+
+Các bài test hiện chỉ xác nhận format request log và loại bỏ query string, chưa quét mọi đường log bằng DLP hoặc cấu hình hệ thống log bên ngoài. Repo chưa cấu hình log rotation 30 ngày, cảnh báo/metrics hoặc schedule retention. VNPAY runtime đang tắt nên heartbeat của worker không phải bằng chứng worker đang chạy trong môi trường ứng dụng.
+
 ## **6. Tài liệu tham khảo**
 
 OWASP Logging Cheat Sheet:[ ](<https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html>)[https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html](<https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html>)
@@ -128,4 +134,15 @@ Tài liệu hướng dẫn các nguyên tắc ghi log phục vụ giám sát và
 
 QUYẾT ĐỊNH VỤ VIỆC ĐÃ CHỐT
 
-Vụ việc đi qua OPEN → IN_REVIEW → CLOSED, lưu kết quả xử lý và thông báo tiếp nhận/kết quả tóm tắt cho người gửi; người gửi không được xem dữ liệu điều tra nội bộ. Nhiều báo cáo cùng mục tiêu được gom trong danh sách nhưng mỗi bản gốc vẫn được lưu. Thời gian lưu hồ sơ/bằng chứng 12 tháng sau đóng vụ đã chốt; thời gian giữ log kỹ thuật 30 ngày và dữ liệu thanh toán sandbox còn cần xác nhận riêng.
+Vụ việc đi qua OPEN → IN_REVIEW → CLOSED, lưu kết quả xử lý và thông báo tiếp nhận/kết quả tóm tắt cho người gửi; người gửi không được xem dữ liệu điều tra nội bộ. Nhiều báo cáo cùng mục tiêu được gom trong danh sách nhưng mỗi bản gốc vẫn được lưu. Thời gian hồ sơ/bằng chứng 12 tháng sau đóng đã chốt; log staging/demo 30 ngày đã chốt ở hợp đồng giao nhận 29/10/2026. Dữ liệu tài chính/Sandbox giữ chính sách riêng, không suy ra thời hạn xóa từ log.
+
+## Hợp đồng vận hành Bước A — 29/10/2026
+
+Nguồn: [báo cáo giao nhận, khiếu nại và vận hành](../report/backend-fulfillment-operations-master-report.md), mục 9–13. Đây là mục tiêu/đích triển khai I–L, chưa chứng nhận đã vận hành.
+
+- Log allowlist gồm requestId/runId, route template, status/duration và mã lỗi; không log object lỗi, full URL/query, body/header, cookie, secret, dữ liệu thẻ hoặc shippingAddress. Free text nghiệp vụ không copy ra console.
+- Audit mutation trong transaction; đọc evidence/contact phải ghi trước response. Audit lỗi không được trả PII. Audit không là bằng chứng thanh toán thành công.
+- Heartbeat worker tối đa mỗi 10 giây bằng timer riêng, stale >60 giây không khỏe; lastSuccessfulCycleAt và 3 cycle lỗi liên tiếp theo dõi riêng. API/DB readiness không chứng minh worker đang chạy.
+- Giữ batch đối chiếu hiện có 30, nghỉ 10 giây giữa cycle, không hứa mỗi cycle chỉ mất 10 giây. Checkpoint và giới hạn QueryDr theo báo cáo thanh toán; tắt VNPAY không giả kết quả thất bại hoặc giải phóng attempt chưa rõ.
+- Case/evidence 12 tháng lịch UTC sau closedAt; quét ít nhất mỗi ngày, xử lý trong 24 giờ sau mốc. Không xóa Case active hoặc ảnh còn tham chiếu cần giữ; không xóa dữ liệu tài chính theo Case TTL. Log staging/demo 30 ngày qua host retention/log rotation.
+- Mục tiêu mới cho hàng chờ/chi tiết Case: p95 ≤3 giây, 20 người đồng thời/10 phút, 1.000 Case mẫu; lỗi ứng dụng không dự kiến <1%. Chưa đo; error 4xx có chủ đích và thời gian tải ảnh/cổng báo riêng.

@@ -8,7 +8,7 @@ Rewear Circle là một sàn giao dịch giữa người tiêu dùng với ngư�
 
 Nền tảng này kết nối những sinh viên muốn bán các món đồ thời trang đường phố không còn sử dụng với những sinh viên đang tìm kiếm quần áo cũ giá cả phải chăng và độc đáo. Sản phẩm chú trọng vào thông tin đăng bán được cấu trúc bài bản, khả năng tìm kiếm tập trung và quy trình thanh toán cũng như theo dõi trạng thái giao dịch rõ ràng.
 
-Đối với phiên bản MVP của khóa học, quy trình thanh toán sử dụng một nhà cung cấp thanh toán duy nhất ở chế độ thử nghiệm/sandbox. Nhà cung cấp này xử lý thông tin thanh toán nhạy cảm; Rewear Circle quản lý đơn hàng, quá trình khởi tạo thanh toán, mã tham chiếu thanh toán và cập nhật trạng thái dựa trên phản hồi đã được xác minh từ nhà cung cấp.
+MVP hỗ trợ VNPAY Sandbox và COD. VNPAY là nhà cung cấp trực tuyến duy nhất, xử lý dữ liệu nhạy cảm và trả kết quả cần backend xác minh. COD thu theo từng Order của Seller, ghi nhận thủ công có nguồn trong demo; không tạo giao dịch cổng hoặc tuyên bố thu hộ đã được hãng vận chuyển xác minh. Hợp đồng hai nhánh ở [báo cáo đơn hàng và thanh toán, mục A-09](../report/backend-orders-vnpay-sandbox-master-report.md).
 
 ## **2. Ranh giới miền**
 
