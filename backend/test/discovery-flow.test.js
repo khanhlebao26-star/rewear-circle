@@ -216,8 +216,13 @@ test("DISC feed, filters, visibility, detail DTO, and public media access", {
     assert.equal("correctionReason" in guestFeed.data.data[0], false);
 
     const guestFilter = await request("/listings?q=cedar");
-    assert.equal(guestFilter.response.status, 401);
-    assert.equal(guestFilter.data.error.code, "UNAUTHORIZED");
+    assert.equal(guestFilter.response.status, 200);
+    assert.equal(guestFilter.data.meta.total, 1);
+    assert.equal(guestFilter.data.data[0].title, "Cedar cotton tee");
+    assert.equal((await request("/cart")).response.status, 401);
+    assert.equal((await request("/checkouts", undefined, {
+      method: "POST", body: {},
+    })).response.status, 401);
 
     const secondPage = await request("/listings?page=2&limit=20");
     assert.equal(secondPage.data.data.length, 5);
@@ -235,7 +240,7 @@ test("DISC feed, filters, visibility, detail DTO, and public media access", {
     const publicIds = new Set(maxPageSize.data.data.map((item) => item.listingId));
     assert.equal(publicIds.has(String(reserved._id)), false);
     assert.equal(publicIds.has(String(sold._id)), false);
-    const badLimit = await request("/listings?limit=101", buyer);
+    const badLimit = await request("/listings?limit=101");
     assert.equal(badLimit.response.status, 422);
     assert.equal(badLimit.data.error.code, "VALIDATION_ERROR");
 
@@ -247,17 +252,18 @@ test("DISC feed, filters, visibility, detail DTO, and public media access", {
       ["minPrice=120000", (item) => item.price >= 120000],
       ["maxPrice=120000", (item) => item.price <= 120000],
     ];
-    for (const [query, matches] of filterCases) {
-      const result = await request(`/listings?${query}&limit=100`, buyer);
-      assert.equal(result.response.status, 200, query);
-      assert.ok(result.data.data.length > 0, query);
-      assert.ok(result.data.data.every(matches), query);
-      assert.equal(result.data.meta.total, result.data.data.length, query);
+    for (const user of [undefined, buyer]) {
+      for (const [query, matches] of filterCases) {
+        const result = await request(`/listings?${query}&limit=100`, user);
+        assert.equal(result.response.status, 200, query);
+        assert.ok(result.data.data.length > 0, query);
+        assert.ok(result.data.data.every(matches), query);
+        assert.equal(result.data.meta.total, result.data.data.length, query);
+      }
     }
 
     const combined = await request(
       "/listings?q=cedar&category=%C3%81o&size=M&condition=C%C3%B2n+t%E1%BB%91t&minPrice=120000&maxPrice=120000",
-      buyer,
     );
     assert.equal(combined.response.status, 200);
     assert.equal(combined.data.meta.total, 1);
@@ -275,7 +281,7 @@ test("DISC feed, filters, visibility, detail DTO, and public media access", {
       "minPrice=500000&maxPrice=20000",
       "unknown=value",
     ]) {
-      const result = await request(`/listings?${query}`, buyer);
+      const result = await request(`/listings?${query}`);
       assert.equal(result.response.status, 422, query);
       assert.equal(result.data.error.code, "VALIDATION_ERROR", query);
     }

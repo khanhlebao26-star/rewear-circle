@@ -1,0 +1,443 @@
+/* Reuse the existing palette in app/globals.css. */
+.header {
+  position: relative;
+  z-index: 20;
+  background: var(--cream);
+}
+.announcement {
+  border-bottom: 1px solid var(--line);
+}
+.announcementInner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 28px;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.09em;
+}
+.motto {
+  color: var(--green);
+  font-family: Georgia, serif;
+  font-size: 12px;
+  font-style: italic;
+  letter-spacing: 0;
+}
+.headerInner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  min-height: 80px;
+}
+.desktopNav {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+.navLink {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 10px 0;
+  color: var(--green);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.navLink:hover,
+.footerLink:hover,
+.footerBottom a:hover {
+  color: var(--green-dark);
+  text-decoration: underline;
+  text-underline-offset: 5px;
+}
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.iconButton {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  min-height: 44px;
+  padding: 8px;
+  border: 0;
+  background: none;
+  color: var(--green-dark);
+  cursor: pointer;
+}
+.sellButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 9px 20px;
+  border: 1px solid var(--green-dark);
+  border-radius: 24px;
+  background: var(--green-dark);
+  color: var(--paper);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.sellButton:hover {
+  background: var(--green);
+  border-color: var(--green);
+}
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 35px;
+  height: 35px;
+  margin-left: 2px;
+  border: 1px solid var(--green);
+  border-radius: 50%;
+  color: var(--green-dark);
+  cursor: pointer;
+}
+.categoryMenu,
+.accountMenu {
+  position: relative;
+}
+.categoryMenu summary,
+.accountMenu summary,
+.mobileMenu summary {
+  list-style: none;
+}
+.categoryMenu summary::-webkit-details-marker,
+.accountMenu summary::-webkit-details-marker,
+.mobileMenu summary::-webkit-details-marker {
+  display: none;
+}
+.categoryMenu summary {
+  cursor: pointer;
+}
+.dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  z-index: 30;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+  box-shadow: 0 12px 25px color-mix(in srgb, var(--ink) 10%, transparent);
+}
+.categoryPanel {
+  left: -16px;
+  width: 200px;
+}
+.accountPanel {
+  right: 0;
+  width: min(260px, calc(100vw - 32px));
+}
+.menuCaption {
+  margin: 0;
+  padding: 8px 10px;
+  color: var(--green);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+}
+.menuItem {
+  display: block;
+  width: 100%;
+  min-height: 42px;
+  padding: 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.menuItem:hover {
+  background: var(--cream);
+}
+.accountHeading {
+  display: grid;
+  gap: 4px;
+  padding: 10px 10px 14px;
+  margin-bottom: 5px;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.accountHeading strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+.accountHeading span {
+  color: var(--green);
+  font-size: 11px;
+}
+.logout {
+  margin-top: 5px;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+}
+.logout:disabled,
+.menuItem:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.count {
+  position: absolute;
+  top: 1px;
+  right: 0;
+  display: grid;
+  place-items: center;
+  min-width: 17px;
+  padding: 0 3px;
+  border-radius: 12px;
+  background: var(--paper);
+  color: var(--green-dark);
+  font-size: 10px;
+}
+.dot {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green-dark);
+}
+.searchPanel {
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+}
+.searchForm {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 0;
+}
+.searchForm > svg {
+  flex-shrink: 0;
+  color: var(--green);
+}
+.searchForm input {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  padding: 10px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 15px;
+}
+.mobileMenu {
+  display: none;
+}
+.mobilePanel {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: 0;
+  z-index: 30;
+  display: grid;
+  gap: 3px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 0 0 10px 10px;
+  background: var(--paper);
+  box-shadow: 0 12px 25px color-mix(in srgb, var(--ink) 10%, transparent);
+}
+.mobilePanel .sellButton {
+  margin-top: 8px;
+}
+.mobileCategories {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin: 4px 0 10px;
+}
+.mobileCategories a {
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font-size: 13px;
+}
+.skipLink {
+  position: absolute;
+  top: -100px;
+  left: 16px;
+  z-index: 50;
+  padding: 10px 15px;
+  border: 1px solid var(--green);
+  border-radius: 5px;
+  background: var(--paper);
+  color: var(--green-dark);
+}
+.skipLink:focus {
+  top: 8px;
+}
+.header a:focus-visible,
+.header button:focus-visible,
+.header summary:focus-visible,
+.header input:focus-visible,
+.footer a:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 4px;
+}
+.footer {
+  margin-top: 24px;
+  border-top: 1px solid var(--line);
+  background: var(--cream);
+}
+.footerTop {
+  display: grid;
+  grid-template-columns: 1.8fr 1fr 1.1fr 1.3fr;
+  gap: 36px;
+  padding: 40px 0 34px;
+}
+.footerAbout h2 {
+  margin: 18px 0 12px;
+  font-family: Georgia, serif;
+  font-size: 21px;
+  font-weight: 500;
+}
+.footerAbout p {
+  max-width: 280px;
+  margin: 0;
+  color: var(--green);
+  font-size: 13px;
+}
+.codLabel {
+  display: inline-block;
+  margin-top: 18px;
+  color: var(--green-dark);
+  font-size: 11px;
+}
+.footerTop h3 {
+  margin: 8px 0 15px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+.footerLink {
+  display: block;
+  padding: 7px 0;
+  color: var(--green);
+  font-size: 12px;
+}
+.footerBottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 18px 0 24px;
+  border-top: 1px solid var(--line);
+  color: var(--green);
+  font-size: 11px;
+}
+.footerBottom > div {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 1100px) {
+  .headerInner {
+    gap: 16px;
+  }
+  .desktopNav {
+    gap: 16px;
+  }
+  .navLink {
+    font-size: 12px;
+  }
+  .actions {
+    gap: 4px;
+  }
+  .notification {
+    display: none;
+  }
+  .sellButton {
+    padding: 9px 16px;
+  }
+}
+@media (max-width: 900px) {
+  .desktopNav {
+    display: none;
+  }
+  .mobileMenu {
+    display: block;
+  }
+  .footerTop {
+    grid-template-columns: 1.5fr 1fr;
+    gap: 26px 40px;
+  }
+  .footerAbout {
+    grid-column: 1 / -1;
+  }
+  .footerAbout p {
+    max-width: 430px;
+  }
+}
+@media (max-width: 720px) {
+  .headerInner {
+    min-height: 72px;
+  }
+  .announcementInner {
+    min-height: 26px;
+    justify-content: center;
+    font-size: 9px;
+  }
+  .motto {
+    display: none;
+  }
+  .footerTop {
+    gap: 24px 25px;
+    padding: 32px 0;
+  }
+  .footerTop nav:last-child {
+    grid-column: 1 / -1;
+  }
+  .footerTop nav:last-child .footerLink {
+    display: inline-block;
+    margin-right: 20px;
+  }
+  .footerBottom {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .footerBottom > div {
+    gap: 12px 18px;
+  }
+  .searchForm input {
+    font-size: 16px;
+  }
+}
+@media (max-width: 480px) {
+  .headerInner {
+    gap: 6px;
+  }
+  .actions {
+    gap: 0;
+  }
+  .iconButton {
+    min-width: 35px;
+    padding: 6px;
+  }
+  .desktopSell,
+  .accountMenu {
+    display: none;
+  }
+  .searchForm {
+    gap: 8px;
+  }
+  .searchForm .sellButton {
+    padding: 9px 12px;
+  }
+}

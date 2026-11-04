@@ -46,7 +46,7 @@ Giữ món phải là thao tác có điều kiện: chỉ chuyển AVAILABLE san
 
 # 6. Phân trang và tìm kiếm
 
-Mặc định 20 kết quả/trang đã chốt; đề xuất limit tối đa 100. Feed sắp xếp mới nhất, dùng cursor gồm createdAt và ID để thứ tự ổn định khi có tin mới. Tài khoản đăng nhập tìm theo tên/mô tả; Guest chỉ xem feed/trang chi tiết công khai và không dùng tìm kiếm/lọc theo quyết định sản phẩm.
+Mặc định 20 kết quả/trang, limit tối đa 100; dùng page/limit theo API hiện tại. Feed sắp xếp mới nhất theo createdAt và ID. Guest được xem danh sách, tìm theo tên/mô tả, dùng bộ lọc và mở chi tiết tin công khai mà không cần đăng nhập theo quyết định cập nhật ngày 04/11/2026.
 
 Không trả tin PENDING/REJECTED/ẩn vào API công khai. Tin SOLD chỉ đọc qua liên kết trực tiếp với watermark và không có hành động mua.
 

@@ -239,7 +239,7 @@ Tin đăng chuyển SOLD ngay khi kết quả thanh toán của Checkout đượ
 
 Mỗi tin chỉ có một bản sửa PENDING tại một thời điểm. Seller có thể gửi form sửa khi món RESERVED, nhưng đơn đã tạo không đổi; tin SOLD không nhận bản sửa. Các cập nhật đồng thời phải kiểm tra phiên bản để tránh ghi đè.
 
-Tin SOLD được giữ qua liên kết trực tiếp với watermark “Đã bán”, không có nút mua và không có trong feed món còn bán. Tin PENDING/REJECTED/ẩn không mở công khai. Người đã đăng nhập tìm theo tên/mô tả, mặc định sắp xếp mới nhất và 20 kết quả/trang.
+Tin SOLD được giữ qua liên kết trực tiếp với watermark “Đã bán”, không có nút mua và không có trong feed món còn bán. Tin PENDING/REJECTED/ẩn không mở công khai. Khách chưa đăng nhập được xem danh sách, tìm theo tên/mô tả, dùng bộ lọc và mở chi tiết tin công khai; mặc định sắp xếp mới nhất và 20 kết quả/trang (cập nhật 04/11/2026).
 
 Vụ việc dùng OPEN → IN_REVIEW → CLOSED và lưu kết quả xử lý. Người báo được thông báo đã tiếp nhận và kết quả tóm tắt, không xem dữ liệu nội bộ. Nhiều báo cáo cùng mục tiêu được nhóm cho Admin nhưng từng bản gốc vẫn lưu riêng.
 
