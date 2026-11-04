@@ -8,6 +8,152 @@ const { REDACTED_TEXT, runCaseRetention } = require("../src/jobs/caseRetention")
 
 const mongoUri = process.env.MONGODB_TEST_URI;
 
+async function withRetentionData(work) {
+  assert.match(new URL(mongoUri).pathname, /_test$/);
+  const mongoose = require("mongoose");
+  const Case = require("../src/models/Case");
+  const Media = require("../src/models/Media");
+  const Report = require("../src/models/Report");
+  const Complaint = require("../src/models/Complaint");
+  const Listing = require("../src/models/Listing");
+  const { Order } = require("../src/models/commerce");
+  const AuditEvent = require("../src/models/AuditEvent");
+  const Notification = require("../src/models/Notification");
+  const models = [Case, Media, Report, Complaint, Listing, Order, AuditEvent, Notification];
+  const uploadDir = await fs.mkdtemp(path.join(os.tmpdir(), "rewear-retention-test-"));
+  await mongoose.connect(mongoUri);
+  try {
+    await Promise.all(models.map(Model => Model.deleteMany({})));
+    await Promise.all(models.map(Model => Model.init()));
+    await work({ mongoose, Case, Media, Report, Complaint, Listing, Order, AuditEvent, uploadDir });
+  } finally {
+    await Promise.all(models.map(Model => Model.deleteMany({})));
+    await mongoose.disconnect();
+    assert.equal(path.dirname(uploadDir), os.tmpdir());
+    assert.match(path.basename(uploadDir), /^rewear-retention-test-/);
+    await fs.rm(uploadDir, { recursive: true, force: true });
+  }
+}
+
+test("shared evidence is reclaimed after the last Case expires, including a media-only retry", {
+  skip: !mongoUri && "Set MONGODB_TEST_URI to a dedicated replica set _test database",
+}, async () => {
+  for (const alreadyRedacted of [false, true]) {
+    await withRetentionData(async ({ mongoose, Case, Media, AuditEvent, uploadDir }) => {
+      const now = new Date("2026-11-04T00:00:00Z");
+      const a = await Case.create({
+        type: "REPORT", targetType: "LISTING", targetId: new mongoose.Types.ObjectId(),
+        status: "CLOSED", closedAt: new Date("2025-10-01T00:00:00Z"),
+        outcomeCode: "NO_ACTION", outcomeSummary: "Closed Case A.",
+      });
+      const b = await Case.create({
+        type: "REPORT", targetType: "LISTING", targetId: new mongoose.Types.ObjectId(),
+      });
+      const media = await Media.create({
+        ownerId: new mongoose.Types.ObjectId(), filename: "shared.png", mimeType: "image/png", size: 7,
+        purpose: "CASE_EVIDENCE", caseId: a._id,
+      });
+      await fs.writeFile(path.join(uploadDir, media.filename), "fixture");
+      for (const record of [a, b]) {
+        record.evidenceMediaIds = [media._id];
+        await record.save();
+      }
+      const first = await runCaseRetention({ now, dryRun: false, uploadDir });
+      assert.equal(first.casesRedacted, 1);
+      assert.equal(first.deleted, 0);
+      assert.equal((await Media.findById(media._id)).purpose, "CASE_EVIDENCE");
+      assert.equal(await fs.readFile(path.join(uploadDir, media.filename), "utf8"), "fixture");
+
+      b.status = "CLOSED";
+      b.closedAt = now;
+      b.outcomeCode = "NO_ACTION";
+      b.outcomeSummary = "Closed Case B.";
+      await b.save();
+      const recent = await runCaseRetention({ now, dryRun: false, uploadDir });
+      assert.equal(recent.deleted, 0);
+
+      // Cover both normal expiry and backlog left by the old job.
+      if (alreadyRedacted) {
+        b.contentRedacted = true;
+        b.evidenceMediaIds = [];
+        await b.save();
+      }
+      const later = new Date("2027-12-05T00:00:00Z");
+      const preview = await runCaseRetention({ now: later, dryRun: true, uploadDir });
+      assert.equal(preview.eligibleCaseCount, alreadyRedacted ? 0 : 1);
+      assert.equal(preview.mediaCleanupCandidates, alreadyRedacted ? 1 : 0);
+      assert.equal(preview.writesPerformed, 0);
+      assert.equal((await Media.findById(media._id)).purpose, "CASE_EVIDENCE");
+
+      const cleaned = await runCaseRetention({ now: later, dryRun: false, uploadDir });
+      assert.equal(cleaned.casesRedacted, alreadyRedacted ? 0 : 1);
+      assert.equal(cleaned.deleted, 1);
+      assert.equal(cleaned.eligibleMediaRemaining, 0);
+      assert.equal(await Media.findById(media._id), null);
+      await assert.rejects(fs.stat(path.join(uploadDir, media.filename)), { code: "ENOENT" });
+      const repeat = await runCaseRetention({ now: later, dryRun: false, uploadDir });
+      assert.equal(repeat.deleted, 0);
+      assert.equal(await AuditEvent.countDocuments({ caseId: a._id, action: "CASE_RETENTION_APPLIED" }), 1);
+    });
+  }
+});
+
+test("reclaimed evidence drains bounded batches without starving behind retained files", {
+  skip: !mongoUri && "Set MONGODB_TEST_URI to a dedicated replica set _test database",
+}, async () => withRetentionData(async ({ mongoose, Case, Media, Report, Complaint, Listing, Order, uploadDir }) => {
+  const now = new Date("2026-11-04T00:00:00Z");
+  const retired = await Case.create({
+    type: "REPORT", targetType: "LISTING", targetId: new mongoose.Types.ObjectId(),
+    status: "CLOSED", closedAt: new Date("2025-01-01T00:00:00Z"), contentRedacted: true,
+    outcomeCode: "NO_ACTION", outcomeSummary: REDACTED_TEXT,
+  });
+  const active = await Case.create({
+    type: "REPORT", targetType: "LISTING", targetId: new mongoose.Types.ObjectId(),
+  });
+  const recent = await Case.create({
+    type: "REPORT", targetType: "LISTING", targetId: new mongoose.Types.ObjectId(),
+    status: "CLOSED", closedAt: new Date("2026-10-01T00:00:00Z"), contentRedacted: true,
+    outcomeCode: "NO_ACTION", outcomeSummary: REDACTED_TEXT,
+  });
+  const docs = await Media.insertMany(Array.from({ length: 209 }, (_, index) => ({
+    ownerId: new mongoose.Types.ObjectId(), filename: `batch-${index}.png`, mimeType: "image/png", size: 7,
+    purpose: "CASE_EVIDENCE", caseId: retired._id,
+  })));
+  await Promise.all(docs.map(media => fs.writeFile(path.join(uploadDir, media.filename), "fixture")));
+  // The first 101 images are held by an active Case; the following 101 are free.
+  active.evidenceMediaIds = docs.slice(0, 101).map(media => media._id);
+  await active.save();
+  // Protect references from every supported collection, including financial snapshots.
+  await Report.collection.insertOne({ caseId: active._id, evidenceMediaIds: [docs[202]._id] });
+  await Complaint.collection.insertOne({ caseId: active._id, evidenceMediaIds: [docs[203]._id] });
+  await Listing.collection.insertOne({ versions: [{ imageIds: [docs[204]._id] }] });
+  await Order.collection.insertOne({ items: [{ imageIds: [docs[205]._id] }] });
+  await Media.updateOne({ _id: docs[206]._id }, { $set: { caseId: active._id } });
+  await Media.updateOne({ _id: docs[207]._id }, { $set: { caseId: recent._id } });
+  await Media.updateOne({ _id: docs[208]._id }, { $set: { caseId: null } });
+
+  const preview = await runCaseRetention({ now, dryRun: true, uploadDir });
+  assert.equal(preview.eligibleCaseCount, 0);
+  assert.equal(preview.mediaCleanupCandidates, 100);
+  assert.equal(await Media.countDocuments({ purpose: "RETENTION_PENDING" }), 0);
+  const first = await runCaseRetention({ now, dryRun: false, uploadDir });
+  assert.equal(first.deleted, 100);
+  assert.equal(first.eligibleMediaRemaining, 1);
+  assert.equal(first.pendingMediaRemaining, 0);
+  const second = await runCaseRetention({ now, dryRun: false, uploadDir });
+  assert.equal(second.deleted, 1);
+  assert.equal(second.eligibleMediaRemaining, 0);
+  const kept = [...docs.slice(0, 101), ...docs.slice(202)];
+  assert.equal(await Media.countDocuments({}), kept.length);
+  for (const media of kept) {
+    assert.equal((await Media.findById(media._id)).purpose, "CASE_EVIDENCE");
+    assert.equal(await fs.readFile(path.join(uploadDir, media.filename), "utf8"), "fixture");
+  }
+  assert.equal(await Listing.countDocuments({}), 1);
+  assert.equal(await Order.countDocuments({}), 1);
+  assert.equal((await runCaseRetention({ now, dryRun: false, uploadDir })).deleted, 0);
+}));
+
 test("case retention dry-run is inert and apply redacts old closed cases safely", {
   skip: !mongoUri && "Set MONGODB_TEST_URI to a dedicated MongoDB replica-set database ending in _test",
 }, async () => {

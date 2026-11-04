@@ -4,6 +4,7 @@ const nodemailer = require("nodemailer");
 const { rateLimit } = require("express-rate-limit");
 const { randomInt, createHmac, timingSafeEqual } = require("node:crypto");
 const User = require("../models/User");
+const { validPassword } = require("../domain/passwordRules");
 const { requireAuth } = require("../middleware/requireAuth");
 const { success, failure: fail } = require("../http/responses");
 
@@ -35,38 +36,66 @@ function hashCode(userId, code) {
 
 async function sendVerificationCode(user) {
   const now = new Date();
-
   if (user.emailVerifiedAt) return false;
-  if (user.verificationSentAt && now - user.verificationSentAt < 60_000) {
+  if (user.verificationSentAt && now - user.verificationSentAt < 60_000)
     return false;
-  }
 
-  if (
+  const resetWindow =
     !user.verificationWindowStart ||
-    now - user.verificationWindowStart >= 60 * 60_000
-  ) {
-    user.verificationWindowStart = now;
-    user.verificationSendsInWindow = 0;
-  }
+    now - user.verificationWindowStart >= 60 * 60_000;
+  const sends = resetWindow ? 0 : user.verificationSendsInWindow || 0;
+  if (sends >= 5) return false;
 
-  if (user.verificationSendsInWindow >= 5) return false;
-
-  const code = String(randomInt(100000, 1000000));
-  user.verificationHash = hashCode(user._id, code);
-  user.verificationExpiresAt = new Date(now.getTime() + 10 * 60_000);
-  user.verificationAttempts = 0;
-  user.verificationSentAt = now;
-  user.verificationSendsInWindow += 1;
-  await user.save();
+  let code;
+  do {
+    code = String(randomInt(100000, 1000000));
+  } while (hashCode(user._id, code) === user.verificationHash);
+  // Compare the current token and send time: at most one concurrent resend wins.
+  const updated = await User.findOneAndUpdate(
+    {
+      _id: user._id,
+      emailVerifiedAt: null,
+      verificationHash: user.verificationHash ?? null,
+      verificationSentAt: user.verificationSentAt ?? null,
+    },
+    {
+      $set: {
+        verificationHash: hashCode(user._id, code),
+        verificationExpiresAt: new Date(now.getTime() + 10 * 60_000),
+        verificationAttempts: 0,
+        verificationSentAt: now,
+        verificationWindowStart: resetWindow
+          ? now
+          : user.verificationWindowStart,
+        verificationSendsInWindow: sends + 1,
+      },
+    },
+    { returnDocument: "after", runValidators: true },
+  );
+  if (!updated) return false;
 
   await mailer.sendMail({
     from: process.env.MAIL_FROM,
-    to: user.email,
+    to: updated.email,
     subject: "Mã xác minh Rewear Circle",
     text: `Mã xác minh của bạn là ${code}. Mã hết hạn sau 10 phút.`,
   });
-
   return true;
+}
+
+function verificationError(user, now) {
+  if (!user) return [401, "UNAUTHORIZED", "Phiên đăng nhập không hợp lệ."];
+  if (user.verificationAttempts >= 5) {
+    return [429, "VERIFICATION_ATTEMPTS_EXCEEDED", "Mã đã hết lượt thử."];
+  }
+  if (
+    !/^[a-f0-9]{64}$/i.test(user.verificationHash || "") ||
+    !user.verificationExpiresAt ||
+    user.verificationExpiresAt <= now
+  ) {
+    return [400, "VERIFICATION_CODE_EXPIRED", "Mã đã hết hạn."];
+  }
+  return null;
 }
 
 const authLimit = rateLimit({
@@ -83,12 +112,12 @@ router.post("/auth/register", authLimit, async (req, res) => {
     const email = String(req.body?.email || "")
       .trim()
       .toLowerCase();
-    const password = String(req.body?.password || "");
+    const password = req.body?.password;
     const displayName = String(req.body?.displayName || "").trim();
 
     if (
       !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
-      password.length < 12 ||
+      !validPassword(password) ||
       displayName.length < 2 ||
       displayName.length > 100
     ) {
@@ -144,7 +173,16 @@ router.post("/auth/login", authLimit, async (req, res) => {
   const email = String(req.body?.email || "")
     .trim()
     .toLowerCase();
-  const password = String(req.body?.password || "");
+  const password = req.body?.password;
+  if (!validPassword(password)) {
+    return fail(
+      req,
+      res,
+      422,
+      "VALIDATION_ERROR",
+      "Mật khẩu cần ít nhất 12 ký tự và tối đa 72 byte UTF-8.",
+    );
+  }
   const user = await User.findOne({ email }).select("+passwordHash");
 
   if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
@@ -222,66 +260,63 @@ router.post(
   },
 );
 
-router.post(
-  "/auth/verify-email",
-  authLimit,
-  requireAuth,
-  async (req, res) => {
-    const code = String(req.body?.code || "");
-    const user = req.user;
+router.post("/auth/verify-email", authLimit, requireAuth, async (req, res) => {
+  const code = String(req.body?.code || "");
+  const user = req.user;
+  if (!/^\d{6}$/.test(code)) {
+    return fail(req, res, 422, "VALIDATION_ERROR", "Mã phải gồm 6 chữ số.");
+  }
+  if (user.emailVerifiedAt) return success(req, res, { user: safeUser(user) });
+  const now = new Date();
+  const error = verificationError(user, now);
+  if (error) return fail(req, res, ...error);
 
-    if (!/^\d{6}$/.test(code)) {
-      return fail(req, res, 422, "VALIDATION_ERROR", "Mã phải gồm 6 chữ số.");
-    }
-    if (user.emailVerifiedAt) {
-      return success(req, res, { user: safeUser(user) });
-    }
-    if (user.verificationAttempts >= 5) {
-      return fail(
-        req,
-        res,
-        429,
-        "VERIFICATION_ATTEMPTS_EXCEEDED",
-        "Mã đã hết lượt thử.",
-      );
-    }
-    if (
-      !user.verificationHash ||
-      !user.verificationExpiresAt ||
-      user.verificationExpiresAt <= new Date()
-    ) {
-      return fail(
-        req,
-        res,
-        400,
-        "VERIFICATION_CODE_EXPIRED",
-        "Mã đã hết hạn.",
-      );
-    }
+  const matches = timingSafeEqual(
+    Buffer.from(user.verificationHash, "hex"),
+    Buffer.from(hashCode(user._id, code), "hex"),
+  );
+  // The token, expiry and quota are checked together with the write.
+  const updated = await User.findOneAndUpdate(
+    {
+      _id: user._id,
+      emailVerifiedAt: null,
+      verificationHash: user.verificationHash,
+      verificationExpiresAt: { $gt: now },
+      verificationAttempts: { $lt: 5 },
+    },
+    matches
+      ? {
+          $set: {
+            emailVerifiedAt: now,
+            verificationHash: null,
+            verificationExpiresAt: null,
+            verificationAttempts: 0,
+          },
+        }
+      : { $inc: { verificationAttempts: 1 } },
+    {
+      returnDocument: "after",
+      runValidators: true,
+    },
+  );
 
-    const expected = Buffer.from(user.verificationHash, "hex");
-    const actual = Buffer.from(hashCode(user._id, code), "hex");
-
-    if (!timingSafeEqual(expected, actual)) {
-      user.verificationAttempts += 1;
-      await user.save();
-      return fail(
-        req,
-        res,
-        400,
-        "VERIFICATION_CODE_INVALID",
-        "Mã không đúng.",
-      );
-    }
-
-    user.emailVerifiedAt = new Date();
-    user.verificationHash = null;
-    user.verificationExpiresAt = null;
-    user.verificationAttempts = 0;
-    await user.save();
-
-    return success(req, res, { user: safeUser(user) });
-  },
-);
+  if (updated) {
+    return matches
+      ? success(req, res, { user: safeUser(updated) })
+      : fail(req, res, 400, "VERIFICATION_CODE_INVALID", "Mã không đúng.");
+  }
+  const current = await User.findById(user._id);
+  if (current?.emailVerifiedAt)
+    return success(req, res, { user: safeUser(current) });
+  const currentError = verificationError(current, new Date());
+  if (currentError) return fail(req, res, ...currentError);
+  return fail(
+    req,
+    res,
+    400,
+    "VERIFICATION_CODE_INVALID",
+    "Mã đã thay đổi; hãy dùng mã mới nhất.",
+  );
+});
 
 module.exports = router;

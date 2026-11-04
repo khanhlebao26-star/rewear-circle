@@ -47,11 +47,64 @@ async function hasExternalReference(mediaId, caseId, session) {
   const refs = await Promise.all([
     Listing.exists({ "versions.imageIds": mediaId }).session(session),
     Order.exists({ "items.imageIds": mediaId }).session(session),
-    Case.exists({ _id: { $ne: caseId }, evidenceMediaIds: mediaId }).session(session),
-    Complaint.exists({ caseId: { $ne: caseId }, evidenceMediaIds: mediaId }).session(session),
-    Report.exists({ caseId: { $ne: caseId }, evidenceMediaIds: mediaId }).session(session),
+    Case.exists({ ...(caseId ? { _id: { $ne: caseId } } : {}), evidenceMediaIds: mediaId }).session(session),
+    Complaint.exists({ ...(caseId ? { caseId: { $ne: caseId } } : {}), evidenceMediaIds: mediaId }).session(session),
+    Report.exists({ ...(caseId ? { caseId: { $ne: caseId } } : {}), evidenceMediaIds: mediaId }).session(session),
   ]);
   return refs.some(Boolean);
+}
+
+// Rediscover evidence kept for another Case, even after its owner was redacted.
+function retiredEvidence(cutoff, tail) {
+  const references = [
+    [Case, "evidenceMediaIds"], [Report, "evidenceMediaIds"],
+    [Complaint, "evidenceMediaIds"], [Listing, "versions.imageIds"],
+    [Order, "items.imageIds"],
+  ];
+  return Media.aggregate([
+    { $match: { purpose: "CASE_EVIDENCE", caseId: { $type: "objectId" } } },
+    { $lookup: {
+      from: Case.collection.name, localField: "caseId", foreignField: "_id",
+      pipeline: [
+        { $match: { status: "CLOSED", closedAt: { $lte: cutoff }, contentRedacted: true } },
+        { $project: { _id: 1 } },
+      ],
+      as: "retiredCase",
+    } },
+    { $match: { "retiredCase.0": { $exists: true } } },
+    ...references.flatMap(([Model, field]) => [
+      { $lookup: {
+        from: Model.collection.name, localField: "_id", foreignField: field,
+        pipeline: [{ $limit: 1 }, { $project: { _id: 1 } }], as: "reference",
+      } },
+      { $match: { "reference.0": { $exists: false } } },
+    ]),
+    ...tail,
+  ]);
+}
+
+const mediaBatch = [
+  { $sort: { _id: 1 } }, { $limit: BATCH_SIZE }, { $project: { _id: 1, caseId: 1 } },
+];
+
+async function markRetiredEvidence(cutoff) {
+  // Filter references before limiting, so held images cannot starve the queue.
+  for (const candidate of await retiredEvidence(cutoff, mediaBatch)) {
+    await mongoose.connection.transaction(async (session) => {
+      const media = await Media.findOne({
+        _id: candidate._id, caseId: candidate.caseId, purpose: "CASE_EVIDENCE",
+      }).session(session);
+      if (!media) return;
+      const owner = await Case.exists({
+        _id: media.caseId, status: "CLOSED", closedAt: { $lte: cutoff }, contentRedacted: true,
+      }).session(session);
+      if (!owner || await hasExternalReference(media._id, null, session)) return;
+      await Media.updateOne(
+        { _id: media._id, caseId: media.caseId, purpose: "CASE_EVIDENCE" },
+        { $set: { purpose: "RETENTION_PENDING" } }, { session },
+      );
+    });
+  }
 }
 
 async function markCaseForRetention(caseId, cutoff, now, runId) {
@@ -182,6 +235,7 @@ async function runCaseRetention({ now = new Date(), dryRun = true, uploadDir = D
   const eligibleCaseCount = await Case.countDocuments(filter);
   const cases = await Case.find(filter).sort({ closedAt: 1, _id: 1 }).limit(BATCH_SIZE).select("_id closedAt evidenceMediaIds").lean();
   const caseIds = cases.map((record) => record._id);
+  const retiredMedia = await retiredEvidence(cutoff, mediaBatch);
   const [reports, complaints, pendingMedia] = caseIds.length
     ? await Promise.all([
         Report.find({ caseId: { $in: caseIds } }).select("caseId evidenceMediaIds").lean(),
@@ -195,6 +249,7 @@ async function runCaseRetention({ now = new Date(), dryRun = true, uploadDir = D
     for (const id of record.evidenceMediaIds) mediaCaseById.set(String(id), record.caseId);
   }
   for (const record of pendingMedia) mediaCaseById.set(String(record._id), record.caseId);
+  for (const record of retiredMedia) mediaCaseById.set(String(record._id), record.caseId);
   const mediaIdSet = new Set(mediaCaseById.keys());
   const candidateMedia = mediaIdSet.size
     ? await Media.find({ _id: { $in: [...mediaIdSet] }, purpose: { $in: ["CASE_EVIDENCE", "RETENTION_PENDING"] } }).select("_id caseId").lean()
@@ -228,10 +283,12 @@ async function runCaseRetention({ now = new Date(), dryRun = true, uploadDir = D
     const result = await markCaseForRetention(record._id, cutoff, now, runId);
     if (result.redacted) casesRedacted += 1;
   }
+  await markRetiredEvidence(cutoff);
   const cleanup = await deletePendingMedia({ uploadDir });
-  const [remainingCases, pendingMediaRemaining] = await Promise.all([
+  const [remainingCases, pendingMediaRemaining, remainingMedia] = await Promise.all([
     Case.countDocuments(filter),
     Media.countDocuments({ purpose: "RETENTION_PENDING" }),
+    retiredEvidence(cutoff, [{ $count: "count" }]),
   ]);
   return {
     mode: "APPLIED",
@@ -241,6 +298,7 @@ async function runCaseRetention({ now = new Date(), dryRun = true, uploadDir = D
     ...cleanup,
     eligibleCasesRemaining: remainingCases,
     pendingMediaRemaining,
+    eligibleMediaRemaining: remainingMedia[0]?.count || 0,
   };
 }
 

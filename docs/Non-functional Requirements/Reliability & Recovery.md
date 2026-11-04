@@ -177,8 +177,10 @@ Ghi Case và mutation giao/nhận/COD phải chia sẻ điểm ghi có điều k
 
 Giữ worker VNPAY độc lập, lease/checkpoint bền vững và giới hạn QueryDr hiện có; không giả thất bại khi tắt tích hợp/timeout. Heartbeat worker riêng API readiness, kiểm tra restart/đa worker và retention chạy lại an toàn ở các bước I–L.
 
-## Retention hồ sơ Case — trạng thái 31/10/2026
+## Retention hồ sơ Case — trạng thái 04/11/2026
 
 `backend/src/jobs/caseRetention.js` và `npm run retention:cases` mặc định chỉ dry-run, dùng mốc 12 tháng lịch UTC sau `closedAt`, giới hạn 100 Case/tệp mỗi lượt. `--apply` ẩn danh nội dung Case/Report/Complaint, giữ receipt/tombstone, scrubs ghi chú tự do liên quan và xóa tệp `CASE_EVIDENCE` chỉ khi không có tham chiếu từ Listing, Order hay hồ sơ khác. Tệp được đánh dấu `RETENTION_PENDING` trước khi xóa; nếu I/O lỗi, lượt sau có thể retry và media API không phục vụ tệp đang chờ.
 
-Test isolated replica set chứng minh dry-run không ghi, hồ sơ cũ được ẩn danh, Case còn mở và hồ sơ chưa đủ 12 tháng không đổi, media dùng chung được giữ, media riêng được xóa và chạy lại không nhân audit. Dry-run MongoDB dự án hiện không có Case nào đủ hạn. Job chưa được lên lịch tự động; cần backup, lịch chạy, giám sát lỗi và nghiệm thu vận hành trước khi áp dụng trên môi trường thật. Xem [runbook backend](../runbooks/backend-fulfillment-operations.md).
+`compose.operations.yaml` đã nối scheduler chạy ngay khi khởi động và khoảng mỗi 24 giờ; lỗi được ghi vào health/log và thử lại sau 10 phút. Chế độ apply phải tạo và xác minh backup mới trước khi xử lý; mặc định cấu hình vẫn dry-run cho môi trường mới. Theo dõi `retention-health.json` để phân biệt status=ok/mode=APPLIED với DRY_RUN.
+
+Job quét lại ảnh CASE_EVIDENCE gắn Case đã đóng đủ 12 tháng và đã ẩn danh nếu không còn tham chiếu từ Case, Report, Complaint, Listing hoặc Order. Ảnh còn được sử dụng không bị đánh dấu RETENTION_PENDING. `eligibleMediaRemaining` phản ánh ảnh đủ điều kiện chưa vào hàng đợi; scheduler xử lý tiếp cả khi không còn Case cần ẩn danh. Test replica set kiểm tra hai Case lần lượt hết hạn, dữ liệu tồn đọng chỉ còn ảnh, dry-run không ghi, bảo vệ tham chiếu và nhiều lô hơn 100 ảnh. Xem [runbook backend](../runbooks/backend-fulfillment-operations.md) và [nghiệm thu cô lập](../runbooks/backend-acceptance.md).

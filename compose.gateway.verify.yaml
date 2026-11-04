@@ -1,0 +1,57 @@
+# Merge with compose.verify.yaml, using a fresh isolated project name.
+x-probe: &probe
+  build: ./backend
+  command: ["node", "test/gateway-acceptance.js"]
+  volumes:
+    - gateway-coordination:/app/uploads
+  depends_on:
+    gateway:
+      condition: service_healthy
+
+services:
+  api:
+    build: ./backend
+    command: ["node", "src/server.js"]
+    environment:
+      NODE_ENV: development
+      PORT: "4000"
+      TRUST_PROXY_HOPS: "1"
+      MONGODB_URI: mongodb://mongo:27017/rewear_gateway_acceptance_test?replicaSet=rs0&directConnection=true
+      SESSION_SECRET: isolated-gateway-test-secret-not-used-for-demo
+      APP_ORIGIN: http://gateway.test
+      SMTP_HOST: unused
+      SMTP_PORT: "1025"
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  gateway:
+    image: nginx:stable-alpine
+    environment:
+      BACKEND_HOST: api
+      FRONTEND_HOST: api
+    volumes:
+      - ./docker/gateway.conf.template:/etc/nginx/templates/default.conf.template:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/health/live"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  probe-a:
+    <<: *probe
+    environment:
+      PROBE_ROLE: A
+  probe-b:
+    <<: *probe
+    environment:
+      PROBE_ROLE: B
+
+volumes:
+  gateway-coordination:

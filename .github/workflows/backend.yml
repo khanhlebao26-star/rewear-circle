@@ -1,0 +1,62 @@
+name: Backend verification
+
+on:
+  pull_request:
+    paths:
+      [
+        "backend/**",
+        "docker/**",
+        "compose*.yaml",
+        ".github/workflows/backend.yml",
+        ".gitattributes",
+      ]
+  push:
+    paths:
+      [
+        "backend/**",
+        "docker/**",
+        "compose*.yaml",
+        ".github/workflows/backend.yml",
+        ".gitattributes",
+      ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Runtime Compose configuration
+        run: SESSION_SECRET=ci-config-validation-only docker compose -f compose.yaml -f compose.operations.yaml --profile retention config --quiet
+      - name: Regression tests
+        run: docker compose -p rewear-backend-ci -f compose.verify.yaml -f compose.gateway.verify.yaml run --build --rm regression
+      - name: Trusted gateway and per-client rate limits
+        shell: bash
+        run: |
+          docker compose -p rewear-backend-ci -f compose.verify.yaml -f compose.gateway.verify.yaml up -d --build probe-a probe-b
+          docker compose -p rewear-backend-ci -f compose.verify.yaml -f compose.gateway.verify.yaml wait probe-a probe-b
+          for service in probe-a probe-b; do
+            id=$(docker compose -p rewear-backend-ci -f compose.verify.yaml -f compose.gateway.verify.yaml ps -aq "$service")
+            test "$(docker inspect --format '{{.State.ExitCode}}' "$id")" = "0"
+          done
+          docker compose -p rewear-backend-ci -f compose.verify.yaml -f compose.gateway.verify.yaml logs --no-log-prefix probe-a probe-b
+      - name: Real backup and retention acceptance
+        run: docker compose -p rewear-backend-ci -f compose.verify.yaml -f compose.gateway.verify.yaml run --build --rm ops-acceptance
+      - name: Restore into an empty isolated MongoDB and verify
+        shell: bash
+        run: |
+          archive=$(docker compose -p rewear-backend-ci -f compose.verify.yaml -f compose.gateway.verify.yaml run --rm --no-deps ops-acceptance node -e "process.stdout.write(JSON.parse(require('node:fs').readFileSync('/backups/acceptance-run.json','utf8')).archive)")
+          docker compose -p rewear-backend-ci -f compose.verify.yaml -f compose.gateway.verify.yaml run --build --rm -e "RESTORE_ARCHIVE=$archive" -e RESTORE_APPLY=1 -e RESTORE_CONFIRM_ISOLATED=rewear-circle-restore restore
+          docker compose -p rewear-backend-ci -f compose.verify.yaml -f compose.gateway.verify.yaml run --build --rm restore-check
+      - name: Diagnostics
+        if: failure()
+        run: docker compose -p rewear-backend-ci -f compose.verify.yaml -f compose.gateway.verify.yaml logs --tail=100
+      - name: Stop isolated CI containers
+        if: always()
+        run: docker compose -p rewear-backend-ci -f compose.verify.yaml -f compose.gateway.verify.yaml down
