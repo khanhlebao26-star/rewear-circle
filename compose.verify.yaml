@@ -1,0 +1,104 @@
+# Isolated acceptance project. Always use a separate -p value.
+services:
+  mongo:
+    image: mongo:8.2.7
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    volumes: ["verify-mongo:/data/db"]
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'quit(db.adminCommand({ping:1}).ok === 1 ? 0 : 1)'"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  mongo-init:
+    image: mongo:8.2.7
+    environment:
+      REPLICA_MEMBER_HOST: mongo:27017
+    entrypoint: ["mongosh", "mongodb://mongo:27017/admin?directConnection=true", "--quiet", "--file", "/init/mongo-init.js"]
+    volumes: ["./docker/mongo-init.js:/init/mongo-init.js:ro"]
+    depends_on:
+      mongo:
+        condition: service_healthy
+  regression:
+    build: ./backend
+    command: ["npm", "test"]
+    environment:
+      NODE_ENV: test
+      MONGODB_TEST_URI: mongodb://mongo:27017/rewear_regression_test?replicaSet=rs0&directConnection=true
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+  ops-acceptance:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.maintenance
+    command: ["node", "test/operations-acceptance.js", "apply"]
+    environment:
+      NODE_ENV: test
+      MONGODB_URI: mongodb://mongo:27017/rewear_ops_acceptance_test?replicaSet=rs0&directConnection=true
+      LOG_DIR: /app/logs
+      LOG_SERVICE: retention
+      BACKUP_ROOT: /backups
+    volumes:
+      - verify-media:/app/uploads
+      - verify-backups:/backups
+      - verify-logs:/app/logs
+      - ./docker:/opt/rewear-ops:ro
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+  mongo-restore:
+    image: mongo:8.2.7
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    volumes: ["verify-restore-mongo:/data/db"]
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'quit(db.adminCommand({ping:1}).ok === 1 ? 0 : 1)'"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  mongo-restore-init:
+    image: mongo:8.2.7
+    environment:
+      REPLICA_MEMBER_HOST: mongo-restore:27017
+    entrypoint: ["mongosh", "mongodb://mongo-restore:27017/admin?directConnection=true", "--quiet", "--file", "/init/mongo-init.js"]
+    volumes: ["./docker/mongo-init.js:/init/mongo-init.js:ro"]
+    depends_on:
+      mongo-restore:
+        condition: service_healthy
+  restore:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.maintenance
+    command: ["sh", "/opt/rewear-ops/restore.sh"]
+    environment:
+      MONGODB_URI: mongodb://mongo-restore:27017/?replicaSet=rs0&directConnection=true
+      RESTORE_ARCHIVE: ${RESTORE_ARCHIVE:-}
+      RESTORE_APPLY: ${RESTORE_APPLY:-0}
+      RESTORE_CONFIRM_ISOLATED: ${RESTORE_CONFIRM_ISOLATED:-}
+    volumes:
+      - verify-backups:/backups:ro
+      - verify-restore-media:/app/uploads
+      - ./docker:/opt/rewear-ops:ro
+    depends_on:
+      mongo-restore-init:
+        condition: service_completed_successfully
+  restore-check:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.maintenance
+    command: ["node", "test/operations-acceptance.js", "verify-restored"]
+    environment:
+      NODE_ENV: test
+      MONGODB_URI: mongodb://mongo-restore:27017/rewear_ops_acceptance_test?replicaSet=rs0&directConnection=true
+    volumes:
+      - verify-backups:/backups:ro
+      - verify-restore-media:/app/uploads
+    depends_on:
+      mongo-restore-init:
+        condition: service_completed_successfully
+volumes:
+  verify-mongo:
+  verify-media:
+  verify-backups:
+  verify-logs:
+  verify-restore-mongo:
+  verify-restore-media:

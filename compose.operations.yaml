@@ -1,0 +1,94 @@
+# Use with: docker compose -f compose.yaml -f compose.operations.yaml ...
+x-gateway: &gateway
+  image: nginx:stable-alpine
+  volumes:
+    - ./docker/gateway.conf.template:/etc/nginx/templates/default.conf.template:ro
+  healthcheck:
+    test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/health/live"]
+    interval: 10s
+    timeout: 3s
+    retries: 5
+    start_period: 10s
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  backend:
+    environment:
+      LOG_DIR: /app/logs
+      LOG_SERVICE: api
+      TRUST_PROXY_HOPS: "1"
+    volumes:
+      - technical-logs:/app/logs
+
+  backend-dev:
+    environment:
+      LOG_DIR: /app/logs
+      LOG_SERVICE: api
+      TRUST_PROXY_HOPS: "1"
+    volumes:
+      - technical-logs:/app/logs
+
+  frontend:
+    ports: !reset []
+
+  frontend-dev:
+    ports: !reset []
+
+  gateway:
+    <<: *gateway
+    environment:
+      BACKEND_HOST: backend
+      FRONTEND_HOST: frontend
+    ports:
+      - "127.0.0.1:3001:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+
+  gateway-dev:
+    <<: *gateway
+    profiles: ["dev"]
+    environment:
+      BACKEND_HOST: backend-dev
+      FRONTEND_HOST: frontend-dev
+    ports:
+      - "127.0.0.1:3011:80"
+    depends_on:
+      backend-dev:
+        condition: service_healthy
+      frontend-dev:
+        condition: service_started
+
+  test-runner:
+    command: ["npm", "test"]
+
+  retention-scheduler:
+    init: true
+    command: ["node", "src/scripts/runOperations.js"]
+    environment:
+      LOG_DIR: /app/logs
+      LOG_SERVICE: retention
+      RETENTION_MODE: ${RETENTION_MODE:-dry-run}
+      RETENTION_MAX_BATCHES: "100"
+      BACKUP_ROOT: /backups
+    volumes:
+      - technical-logs:/app/logs
+      - ./backups:/backups
+    healthcheck:
+      test: ["CMD", "node", "-e", "const s=JSON.parse(require('node:fs').readFileSync('/app/logs/retention-health.json','utf8'));process.exit(s.status==='ok' && s.mode===(process.env.RETENTION_MODE==='apply'?'APPLIED':'DRY_RUN') && Date.now()-Date.parse(s.timestamp)<26*60*60*1000?0:1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15m
+    stop_grace_period: 30s
+
+volumes:
+  technical-logs:
+    name: rewear-circle-src-technical-logs

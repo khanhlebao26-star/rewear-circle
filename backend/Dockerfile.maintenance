@@ -15,7 +15,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 COPY src ./src
 COPY test ./test
-RUN mkdir -p uploads && chown -R node:node /app
+RUN mkdir -p uploads logs /backups && chown -R node:node /app /backups
 
 ENV NODE_ENV=development
 USER node

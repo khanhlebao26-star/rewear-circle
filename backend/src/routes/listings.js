@@ -11,9 +11,11 @@ const { applyAdminVisibility } = require("../services/moderation");
 const {
   requireAuth,
   requireAdmin,
+  requireRole,
   requireVerifiedEmail,
 } = require("../middleware/requireAuth");
 const { success, failure: fail } = require("../http/responses");
+const requireUser = requireRole("USER");
 
 async function findOwnedListing(listingId, ownerId, session) {
   if (!mongoose.isValidObjectId(listingId)) return null;
@@ -53,7 +55,13 @@ function readPagination(query) {
   return { page, limit };
 }
 
-function notificationForListing({ listing, type, message, reason = "", versionId = null }) {
+function notificationForListing({
+  listing,
+  type,
+  message,
+  reason = "",
+  versionId = null,
+}) {
   return {
     recipientId: listing.ownerId,
     type,
@@ -68,7 +76,7 @@ async function userOwnsImages(imageIds, userId) {
   const count = await Media.countDocuments({
     _id: { $in: imageIds },
     ownerId: userId,
-    purpose: { $ne: "CASE_EVIDENCE" },
+    purpose: "LISTING",
   });
   return count === imageIds.length;
 }
@@ -76,6 +84,7 @@ async function userOwnsImages(imageIds, userId) {
 router.post(
   "/listings",
   requireAuth,
+  requireUser,
   requireVerifiedEmail,
   async (req, res) => {
     const form = readForm(req.body);
@@ -94,15 +103,20 @@ router.post(
       versions: [{ ...form, status: "PENDING" }],
     });
 
-    return success(req, res, {
-      listingId: String(listing._id),
-      versionId: String(listing.versions[0]._id),
-      status: "PENDING",
-    }, 201);
+    return success(
+      req,
+      res,
+      {
+        listingId: String(listing._id),
+        versionId: String(listing.versions[0]._id),
+        status: "PENDING",
+      },
+      201,
+    );
   },
 );
 
-router.get("/me/listings", requireAuth, async (req, res) => {
+router.get("/me/listings", requireAuth, requireUser, async (req, res) => {
   const page = Math.min(
     10000,
     Math.max(1, Number.parseInt(req.query.page, 10) || 1),
@@ -116,7 +130,7 @@ router.get("/me/listings", requireAuth, async (req, res) => {
   return success(req, res, listings, 200, { page });
 });
 
-router.get("/me/listings/:id", requireAuth, async (req, res) => {
+router.get("/me/listings/:id", requireAuth, requireUser, async (req, res) => {
   const listing = await findOwnedListing(req.params.id, req.user._id);
   if (!listing) return fail(req, res, 404, "NOT_FOUND", "Không tìm thấy tin.");
 
@@ -131,10 +145,14 @@ function notificationDTO(notification) {
     orderId: notification.orderId ? String(notification.orderId) : null,
     versionId: notification.versionId ? String(notification.versionId) : null,
     reportId: notification.reportId ? String(notification.reportId) : null,
-    complaintId: notification.complaintId ? String(notification.complaintId) : null,
+    complaintId: notification.complaintId
+      ? String(notification.complaintId)
+      : null,
     caseId: notification.caseId ? String(notification.caseId) : null,
     message: notification.message,
-    ...(notification.type.startsWith("LISTING_") ? { reason: notification.reason } : {}),
+    ...(notification.type.startsWith("LISTING_")
+      ? { reason: notification.reason }
+      : {}),
     readAt: notification.readAt,
     createdAt: notification.createdAt,
   };
@@ -159,7 +177,12 @@ router.get("/me/notifications", requireAuth, async (req, res) => {
   ]);
 
   res.set("Cache-Control", "private, no-store");
-  return success(req, res, items.map(notificationDTO), 200, { page, limit, total, unread });
+  return success(req, res, items.map(notificationDTO), 200, {
+    page,
+    limit,
+    total,
+    unread,
+  });
 });
 
 router.patch("/me/notifications/:id/read", requireAuth, async (req, res) => {
@@ -177,7 +200,8 @@ router.patch("/me/notifications/:id/read", requireAuth, async (req, res) => {
       _id: req.params.id,
       recipientId: req.user._id,
     });
-    if (!alreadyRead) return fail(req, res, 404, "NOT_FOUND", "Không tìm thấy thông báo.");
+    if (!alreadyRead)
+      return fail(req, res, 404, "NOT_FOUND", "Không tìm thấy thông báo.");
     res.set("Cache-Control", "private, no-store");
     return success(req, res, notificationDTO(alreadyRead));
   }
@@ -189,9 +213,11 @@ router.patch("/me/notifications/:id/read", requireAuth, async (req, res) => {
 router.get(
   "/me/listings/:id/revisions",
   requireAuth,
+  requireUser,
   async (req, res) => {
     const listing = await findOwnedListing(req.params.id, req.user._id);
-    if (!listing) return fail(req, res, 404, "NOT_FOUND", "Không tìm thấy tin.");
+    if (!listing)
+      return fail(req, res, 404, "NOT_FOUND", "Không tìm thấy tin.");
 
     return success(req, res, {
       versions: listing.versions,
@@ -204,11 +230,13 @@ router.get(
 router.post(
   "/listings/:id/revisions",
   requireAuth,
+  requireUser,
   requireVerifiedEmail,
   async (req, res) => {
     try {
       const listing = await findOwnedListing(req.params.id, req.user._id);
-      if (!listing) return fail(req, res, 404, "NOT_FOUND", "Không tìm thấy tin.");
+      if (!listing)
+        return fail(req, res, 404, "NOT_FOUND", "Không tìm thấy tin.");
 
       if (listing.saleStatus === "SOLD") {
         return fail(req, res, 409, "LISTING_SOLD", "Không thể sửa tin đã bán.");
@@ -255,14 +283,19 @@ router.post(
       await listing.save();
 
       const version = listing.versions[listing.versions.length - 1];
-      return success(req, res, {
-        listingId: String(listing._id),
-        versionId: String(version._id),
-        status: "PENDING",
-        isResubmission,
-        resubmissionsUsed: listing.resubmissionCount,
-        resubmissionsRemaining: Math.max(0, 5 - listing.resubmissionCount),
-      }, 201);
+      return success(
+        req,
+        res,
+        {
+          listingId: String(listing._id),
+          versionId: String(version._id),
+          status: "PENDING",
+          isResubmission,
+          resubmissionsUsed: listing.resubmissionCount,
+          resubmissionsRemaining: Math.max(0, 5 - listing.resubmissionCount),
+        },
+        201,
+      );
     } catch (error) {
       if (error.name === "VersionError") {
         return fail(
@@ -281,15 +314,26 @@ router.post(
 router.post(
   "/listings/:id/visibility",
   requireAuth,
+  requireUser,
   async (req, res) => {
     const action = req.body?.action;
     if (!["HIDE", "SHOW"].includes(action)) {
-      return fail(req, res, 422, "VALIDATION_ERROR", "action phải là HIDE hoặc SHOW.");
+      return fail(
+        req,
+        res,
+        422,
+        "VALIDATION_ERROR",
+        "action phải là HIDE hoặc SHOW.",
+      );
     }
 
     try {
       const state = await mongoose.connection.transaction(async (session) => {
-        const listing = await findOwnedListing(req.params.id, req.user._id, session);
+        const listing = await findOwnedListing(
+          req.params.id,
+          req.user._id,
+          session,
+        );
         if (!listing) {
           const error = new Error("Không tìm thấy tin.");
           error.status = 404;
@@ -310,20 +354,25 @@ router.post(
         }
 
         const nextHidden = action === "HIDE";
-        if (listing.sellerHidden === nextHidden) return sellerListingState(listing);
+        if (listing.sellerHidden === nextHidden)
+          return sellerListingState(listing);
 
         listing.sellerHidden = nextHidden;
         await listing.save({ session });
         await AuditEvent.create(
-          [{
-            actorId: req.user._id,
-            action: nextHidden ? "LISTING_SELLER_HIDDEN" : "LISTING_SELLER_SHOWN",
-            targetType: "LISTING",
-            targetId: listing._id,
-            requestId: req.requestId,
-            fromState: String(!nextHidden),
-            toState: String(nextHidden),
-          }],
+          [
+            {
+              actorId: req.user._id,
+              action: nextHidden
+                ? "LISTING_SELLER_HIDDEN"
+                : "LISTING_SELLER_SHOWN",
+              targetType: "LISTING",
+              targetId: listing._id,
+              requestId: req.requestId,
+              fromState: String(!nextHidden),
+              toState: String(nextHidden),
+            },
+          ],
           { session },
         );
         return sellerListingState(listing);
@@ -332,74 +381,97 @@ router.post(
       return success(req, res, state);
     } catch (error) {
       if (error.name === "VersionError") {
-        return fail(req, res, 409, "CONFLICT", "Tin vừa được thay đổi; hãy thử lại.");
+        return fail(
+          req,
+          res,
+          409,
+          "CONFLICT",
+          "Tin vừa được thay đổi; hãy thử lại.",
+        );
       }
       throw error;
     }
   },
 );
 
-router.get("/admin/listing-versions", requireAuth, requireAdmin, async (req, res) => {
-  if (req.query.status && req.query.status !== "PENDING") {
-    return fail(req, res, 422, "VALIDATION_ERROR", "Hàng chờ chỉ hỗ trợ status=PENDING.");
-  }
-  const pagination = readPagination(req.query);
-  if (!pagination) {
-    return fail(req, res, 422, "VALIDATION_ERROR", "page/limit không hợp lệ.");
-  }
+router.get(
+  "/admin/listing-versions",
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    if (req.query.status && req.query.status !== "PENDING") {
+      return fail(
+        req,
+        res,
+        422,
+        "VALIDATION_ERROR",
+        "Hàng chờ chỉ hỗ trợ status=PENDING.",
+      );
+    }
+    const pagination = readPagination(req.query);
+    if (!pagination) {
+      return fail(
+        req,
+        res,
+        422,
+        "VALIDATION_ERROR",
+        "page/limit không hợp lệ.",
+      );
+    }
 
-  const { page, limit } = pagination;
-  const [result] = await Listing.aggregate([
-    { $match: { "versions.status": "PENDING" } },
-    { $unwind: "$versions" },
-    { $match: { "versions.status": "PENDING" } },
-    { $sort: { "versions.submittedAt": -1, _id: -1 } },
-    {
-      $facet: {
-        items: [
-          { $skip: (page - 1) * limit },
-          { $limit: limit },
-          {
-            $lookup: {
-              from: User.collection.name,
-              localField: "ownerId",
-              foreignField: "_id",
-              as: "seller",
-            },
-          },
-          { $unwind: { path: "$seller", preserveNullAndEmptyArrays: true } },
-          {
-            $project: {
-              _id: 0,
-              listingId: "$_id",
-              versionId: "$versions._id",
-              submittedAt: "$versions.submittedAt",
-              seller: {
-                userId: "$seller._id",
-                displayName: "$seller.displayName",
-              },
-              version: {
-                title: "$versions.title",
-                category: "$versions.category",
-                size: "$versions.size",
-                condition: "$versions.condition",
-                price: "$versions.price",
-                imageIds: "$versions.imageIds",
+    const { page, limit } = pagination;
+    const [result] = await Listing.aggregate([
+      { $match: { "versions.status": "PENDING" } },
+      { $unwind: "$versions" },
+      { $match: { "versions.status": "PENDING" } },
+      { $sort: { "versions.submittedAt": -1, _id: -1 } },
+      {
+        $facet: {
+          items: [
+            { $skip: (page - 1) * limit },
+            { $limit: limit },
+            {
+              $lookup: {
+                from: User.collection.name,
+                localField: "ownerId",
+                foreignField: "_id",
+                as: "seller",
               },
             },
-          },
-        ],
-        total: [{ $count: "count" }],
+            { $unwind: { path: "$seller", preserveNullAndEmptyArrays: true } },
+            {
+              $project: {
+                _id: 0,
+                listingId: "$_id",
+                versionId: "$versions._id",
+                submittedAt: "$versions.submittedAt",
+                seller: {
+                  userId: "$seller._id",
+                  displayName: "$seller.displayName",
+                },
+                version: {
+                  title: "$versions.title",
+                  category: "$versions.category",
+                  size: "$versions.size",
+                  condition: "$versions.condition",
+                  price: "$versions.price",
+                  imageIds: "$versions.imageIds",
+                },
+              },
+            },
+          ],
+          total: [{ $count: "count" }],
+        },
       },
-    },
-  ]);
+    ]);
 
-  return success(req, res, result?.items || [], 200, {
-    page,
-    limit,
-    total: result?.total[0]?.count || 0,
-  });
-});
+    return success(req, res, result?.items || [], 200, {
+      page,
+      limit,
+      total: result?.total[0]?.count || 0,
+    });
+  },
+);
 
 router.get(
   "/admin/listing-versions/:versionId",
@@ -410,7 +482,9 @@ router.get(
       return fail(req, res, 404, "NOT_FOUND", "Không tìm thấy phiên bản.");
     }
 
-    const listing = await Listing.findOne({ "versions._id": req.params.versionId });
+    const listing = await Listing.findOne({
+      "versions._id": req.params.versionId,
+    });
     if (!listing) {
       return fail(req, res, 404, "NOT_FOUND", "Không tìm thấy phiên bản.");
     }
@@ -421,12 +495,17 @@ router.get(
       AuditEvent.find({
         $or: [
           { targetType: "LISTING", targetId: listing._id },
-          { targetType: "LISTING_VERSION", targetId: { $in: listing.versions.map(({ _id }) => _id) } },
+          {
+            targetType: "LISTING_VERSION",
+            targetId: { $in: listing.versions.map(({ _id }) => _id) },
+          },
         ],
       })
         .sort({ createdAt: -1 })
         .limit(50)
-        .select("actorId action targetType targetId requestId reason fromState toState createdAt")
+        .select(
+          "actorId action targetType targetId requestId reason fromState toState createdAt",
+        )
         .lean(),
     ]);
     return success(req, res, {
@@ -455,23 +534,38 @@ router.post(
   requireAdmin,
   async (req, res) => {
     const { decision } = req.body || {};
-    const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+    const reason =
+      typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
     if (
       !mongoose.isValidObjectId(req.params.versionId) ||
       !["APPROVE", "REJECT"].includes(decision) ||
       (decision === "REJECT" && !reason)
     ) {
-      return fail(req, res, 422, "VALIDATION_ERROR", "Quyết định hoặc lý do không hợp lệ.");
+      return fail(
+        req,
+        res,
+        422,
+        "VALIDATION_ERROR",
+        "Quyết định hoặc lý do không hợp lệ.",
+      );
     }
 
     try {
       const result = await mongoose.connection.transaction(async (session) => {
-        const listing = await Listing.findOne({ "versions._id": req.params.versionId }).session(session);
+        const listing = await Listing.findOne({
+          "versions._id": req.params.versionId,
+        }).session(session);
         const version = listing?.versions.id(req.params.versionId);
         if (!listing || !version) {
           const error = new Error("Không tìm thấy phiên bản.");
           error.status = 404;
           error.code = "NOT_FOUND";
+          throw error;
+        }
+        if (String(listing.ownerId) === String(req.user._id)) {
+          const error = new Error("Không được tự kiểm duyệt tin của mình.");
+          error.status = 403;
+          error.code = "SELF_REVIEW_FORBIDDEN";
           throw error;
         }
         if (version.status !== "PENDING") {
@@ -498,28 +592,39 @@ router.post(
 
         await listing.save({ session });
         await AuditEvent.create(
-          [{
-            actorId: req.user._id,
-            action: decision === "APPROVE" ? "LISTING_APPROVED" : "LISTING_REJECTED",
-            targetType: "LISTING_VERSION",
-            targetId: version._id,
-            requestId: req.requestId,
-            reason,
-            fromState: "PENDING",
-            toState: version.status,
-          }],
+          [
+            {
+              actorId: req.user._id,
+              action:
+                decision === "APPROVE"
+                  ? "LISTING_APPROVED"
+                  : "LISTING_REJECTED",
+              targetType: "LISTING_VERSION",
+              targetId: version._id,
+              requestId: req.requestId,
+              reason,
+              fromState: "PENDING",
+              toState: version.status,
+            },
+          ],
           { session },
         );
         await Notification.create(
-          [notificationForListing({
-            listing,
-            type: decision === "APPROVE" ? "LISTING_APPROVED" : "LISTING_REJECTED",
-            message: decision === "APPROVE"
-              ? "Phiên bản tin của bạn đã được duyệt."
-              : "Phiên bản tin của bạn chưa được duyệt; vui lòng xem lý do và gửi lại nếu cần.",
-            reason,
-            versionId: version._id,
-          })],
+          [
+            notificationForListing({
+              listing,
+              type:
+                decision === "APPROVE"
+                  ? "LISTING_APPROVED"
+                  : "LISTING_REJECTED",
+              message:
+                decision === "APPROVE"
+                  ? "Phiên bản tin của bạn đã được duyệt."
+                  : "Phiên bản tin của bạn chưa được duyệt; vui lòng xem lý do và gửi lại nếu cần.",
+              reason,
+              versionId: version._id,
+            }),
+          ],
           { session },
         );
 
@@ -541,7 +646,13 @@ router.post(
       return success(req, res, result);
     } catch (error) {
       if (error.name === "VersionError") {
-        return fail(req, res, 409, "CONFLICT", "Tin vừa được thay đổi; hãy thử lại.");
+        return fail(
+          req,
+          res,
+          409,
+          "CONFLICT",
+          "Tin vừa được thay đổi; hãy thử lại.",
+        );
       }
       throw error;
     }
@@ -554,16 +665,24 @@ router.post(
   requireAdmin,
   async (req, res) => {
     const action = req.body?.action;
-    const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+    const reason =
+      typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
     const requireCorrection = req.body?.requireCorrection;
     if (
       !mongoose.isValidObjectId(req.params.id) ||
       !["HIDE", "SHOW"].includes(action) ||
       !reason ||
-      (requireCorrection !== undefined && typeof requireCorrection !== "boolean") ||
+      (requireCorrection !== undefined &&
+        typeof requireCorrection !== "boolean") ||
       (action === "SHOW" && requireCorrection !== undefined)
     ) {
-      return fail(req, res, 422, "VALIDATION_ERROR", "Thao tác, lý do hoặc cờ yêu cầu sửa không hợp lệ.");
+      return fail(
+        req,
+        res,
+        422,
+        "VALIDATION_ERROR",
+        "Thao tác, lý do hoặc cờ yêu cầu sửa không hợp lệ.",
+      );
     }
 
     try {
@@ -589,7 +708,13 @@ router.post(
       return success(req, res, state);
     } catch (error) {
       if (error.name === "VersionError") {
-        return fail(req, res, 409, "CONFLICT", "Tin vừa được thay đổi; hãy thử lại.");
+        return fail(
+          req,
+          res,
+          409,
+          "CONFLICT",
+          "Tin vừa được thay đổi; hãy thử lại.",
+        );
       }
       throw error;
     }

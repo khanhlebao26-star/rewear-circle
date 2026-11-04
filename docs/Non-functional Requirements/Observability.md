@@ -103,7 +103,7 @@ Hệ thống cần giới hạn quyền xem log và chỉ cho phép những ngư
 
 Các mốc lưu trữ đã chốt và đang đề xuất cho MVP:
 
-- **Log kỹ thuật:** 30 ngày trong môi trường demo.
+- **Log kỹ thuật API/retention:** ngày UTC hiện tại và 29 ngày UTC trước trong môi trường demo. Log Docker chẩn đoán xoay theo dung lượng, không thuộc cam kết thời gian này.
 - **Hồ sơ vụ việc và bằng chứng:** 12 tháng kể từ ngày vụ việc được đóng.
 - **Hồ sơ tài chính:** Áp dụng chính sách lưu trữ riêng, phù hợp với yêu cầu quản lý và quy định liên quan.
 Log không được chứa mật khẩu, token xác thực, dữ liệu thẻ thanh toán hoặc thông tin riêng tư không cần thiết.
@@ -120,11 +120,11 @@ Cần thực hiện ít nhất bốn tình huống kiểm thử sau:
 - **Nhiều báo cáo cùng một món hàng:** Xác nhận các báo cáo được liên kết đúng vụ việc nhưng vẫn giữ riêng người gửi, lý do và bằng chứng.
 **Tiêu chí đạt:** Với các mã định danh liên quan, có thể giải thích được ai đã thực hiện hành động gì, vào thời điểm nào và hệ thống đã xử lý ra sao. Quá trình điều tra không được làm lộ dữ liệu nhạy cảm.
 
-## **Trạng thái triển khai hiện tại — 31/10/2026**
+## **Trạng thái triển khai hiện tại — 04/11/2026**
 
 API ghi JSON một dòng gồm requestId, method, route template, statusCode, durationMs và mã lỗi chuẩn hóa. Không log query string, body, header, cookie, stack hoặc object Error. Startup, seed, audit/migration và worker cũng dùng field allowlist; seed không in mật khẩu demo. Worker VNPAY có workerId/runId, heartbeat độc lập và số cycle lỗi liên tiếp.
 
-Các bài test hiện chỉ xác nhận format request log và loại bỏ query string, chưa quét mọi đường log bằng DLP hoặc cấu hình hệ thống log bên ngoài. Repo chưa cấu hình log rotation 30 ngày, cảnh báo/metrics hoặc schedule retention. VNPAY runtime đang tắt nên heartbeat của worker không phải bằng chứng worker đang chạy trong môi trường ứng dụng.
+`technicalLog.js` ghi thêm file API/retention theo ngày UTC trong volume `rewear-circle-src-technical-logs`, quyền file 600; dọn các ngày ngoài cửa sổ 30 ngày khi ghi log ngày mới và trong mỗi lượt scheduler. `compose.operations.yaml` nối volume và scheduler, chạy ngay khi khởi động rồi khoảng mỗi 24 giờ; chế độ apply xác minh backup trước khi xử lý dữ liệu. Log Docker chẩn đoán dùng json-file 10 MB × 3 file/container. AuditEvent không bị xóa theo chính sách log kỹ thuật. Test kiểm tra allowlist, loại query và dọn đúng biên ngày; chưa quét mọi đường log bằng DLP và chưa cấu hình cảnh báo/metrics ngoài hệ thống. VNPAY runtime vẫn tắt.
 
 ## **6. Tài liệu tham khảo**
 
@@ -144,5 +144,5 @@ Nguồn: [báo cáo giao nhận, khiếu nại và vận hành](../report/backen
 - Audit mutation trong transaction; đọc evidence/contact phải ghi trước response. Audit lỗi không được trả PII. Audit không là bằng chứng thanh toán thành công.
 - Heartbeat worker tối đa mỗi 10 giây bằng timer riêng, stale >60 giây không khỏe; lastSuccessfulCycleAt và 3 cycle lỗi liên tiếp theo dõi riêng. API/DB readiness không chứng minh worker đang chạy.
 - Giữ batch đối chiếu hiện có 30, nghỉ 10 giây giữa cycle, không hứa mỗi cycle chỉ mất 10 giây. Checkpoint và giới hạn QueryDr theo báo cáo thanh toán; tắt VNPAY không giả kết quả thất bại hoặc giải phóng attempt chưa rõ.
-- Case/evidence 12 tháng lịch UTC sau closedAt; quét ít nhất mỗi ngày, xử lý trong 24 giờ sau mốc. Không xóa Case active hoặc ảnh còn tham chiếu cần giữ; không xóa dữ liệu tài chính theo Case TTL. Log staging/demo 30 ngày qua host retention/log rotation.
+- Case/evidence 12 tháng lịch UTC sau closedAt; quét ít nhất mỗi ngày, xử lý trong 24 giờ sau mốc. Không xóa Case active hoặc ảnh còn tham chiếu cần giữ; không xóa dữ liệu tài chính theo Case TTL. Cấu hình demo giữ file log API/retention trong 30 nhóm ngày UTC trên volume; log Docker chẩn đoán xoay theo dung lượng.
 - Mục tiêu mới cho hàng chờ/chi tiết Case: p95 ≤3 giây, 20 người đồng thời/10 phút, 1.000 Case mẫu; lỗi ứng dụng không dự kiến <1%. Chưa đo; error 4xx có chủ đích và thời gian tải ảnh/cổng báo riêng.

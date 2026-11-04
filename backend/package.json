@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node test/domain.test.js && node test/vnpay.test.js && node test/observability.test.js && node test/discovery-flow.test.js && node test/commerce-flow.test.js && node test/moderation-flow.test.js && node test/retention.test.js",
+    "test": "node test/domain.test.js && node test/vnpay.test.js && node test/observability.test.js && node test/discovery-flow.test.js && node test/commerce-flow.test.js && node test/moderation-flow.test.js && node test/retention.test.js && node test/operations.test.js && node test/seed-staff.test.js && node test/security-flow.test.js && node test/commerce-regression.test.js",
     "start": "node --env-file-if-exists=.env src/server.js",
     "dev": "node --watch --env-file-if-exists=.env src/server.js",
     "seed": "node --env-file-if-exists=.env src/scripts/seed.js",

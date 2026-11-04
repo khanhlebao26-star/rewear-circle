@@ -1,4 +1,5 @@
 const { randomUUID } = require("node:crypto");
+const { log } = require("./technicalLog");
 
 module.exports = function requestLogger(req, res, next) {
   req.requestId = randomUUID();
@@ -8,7 +9,7 @@ module.exports = function requestLogger(req, res, next) {
     const routePath = req.route?.path;
     const route = `${req.baseUrl || ""}${typeof routePath === "string" ? routePath : "UNMATCHED"}`;
     const statusCode = res.statusCode;
-    console.log(JSON.stringify({
+    log({
       event: "http_request",
       level: statusCode >= 500 ? "error" : statusCode >= 400 ? "warn" : "info",
       requestId: req.requestId,
@@ -17,7 +18,7 @@ module.exports = function requestLogger(req, res, next) {
       statusCode,
       durationMs: Number(process.hrtime.bigint() - startedAt) / 1e6,
       ...(req.errorCode ? { errorCode: req.errorCode } : {}),
-    }));
+    });
   });
   next();
 };

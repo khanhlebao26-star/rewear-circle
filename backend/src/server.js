@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { log } = require("./http/technicalLog");
 
 async function main() {
   for (const key of ["MONGODB_URI", "SESSION_SECRET", "APP_ORIGIN"]) {
@@ -45,18 +46,19 @@ async function main() {
   const port = Number(process.env.PORT || 4000);
 
   app.listen(port, () => {
-    console.log(JSON.stringify({ event: "api_started", level: "info", port }));
+    log({ event: "api_started", level: "info", port });
   });
 }
 
 main().catch((error) => {
-  console.error(JSON.stringify({
+  log({
     event: "api_start_failed",
     level: "error",
     errorType: error.name || "Error",
-    errorCode: typeof error.code === "string" && /^[A-Z0-9_]{1,64}$/.test(error.code)
-      ? error.code
-      : "STARTUP_FAILED",
-  }));
+    errorCode:
+      typeof error.code === "string" && /^[A-Z0-9_]{1,64}$/.test(error.code)
+        ? error.code
+        : "STARTUP_FAILED",
+  });
   process.exit(1);
 });
