@@ -1,0 +1,136 @@
+:root {
+  --ink: #263b32;
+  --green: #314f3e;
+  --sage: #526e5c;
+  --muted: #6a786f;
+  --cream: #f7f6f0;
+  --paper: #fffefa;
+  --line: #dfe3d9;
+  --soft: #e9eee3;
+  --clay: #bd785b;
+  --red: #994b3d;
+  --radius: 12px;
+}
+* {
+  box-sizing: border-box;
+}
+html {
+  scroll-behavior: smooth;
+}
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--cream);
+  font:
+    14px/1.6 "Segoe UI",
+    Arial,
+    sans-serif;
+}
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+button,
+a {
+  color: inherit;
+}
+button {
+  cursor: pointer;
+}
+a {
+  text-decoration: none;
+}
+button {
+  border: 0;
+}
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+button:focus-visible,
+a:focus-visible,
+summary:focus-visible {
+  outline: 3px solid #a0b89b;
+  outline-offset: 4px;
+}
+input:focus,
+select:focus,
+textarea:focus {
+  outline: 2px solid #92ad8f;
+  outline-offset: 2px;
+}
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+h1,
+h2,
+.serif {
+  font-family: Cambria, "Times New Roman", serif;
+  font-weight: 400;
+  letter-spacing: -0.035em;
+}
+h1 {
+  font-size: 42px;
+  line-height: 1.15;
+  margin-bottom: 14px;
+}
+h2 {
+  font-size: 29px;
+  line-height: 1.25;
+  margin-bottom: 12px;
+}
+h3 {
+  font-size: 15px;
+  line-height: 1.5;
+  margin-bottom: 10px;
+}
+p {
+  margin-bottom: 16px;
+}
+svg {
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+small,
+.small {
+  font-size: 12px;
+}
+@media (max-width: 600px) {
+  body {
+    font-size: 13px;
+  }
+  h1 {
+    font-size: 34px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+fieldset:disabled {
+  opacity: 0.6;
+}
+summary {
+  cursor: pointer;
+}

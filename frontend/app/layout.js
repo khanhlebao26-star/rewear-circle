@@ -1,5 +1,4 @@
-import SiteFooter from "../components/SiteFooter";
-import SiteHeader from "../components/SiteHeader";
+import AppShell from "@/components/layout/AppShell";
 import "./globals.css";
 
 export const metadata = {
@@ -12,9 +11,7 @@ export default function RootLayout({ children }) {
   return (
     <html lang="vi">
       <body>
-        <SiteHeader />
-        {children}
-        <SiteFooter />
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );

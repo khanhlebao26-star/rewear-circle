@@ -135,6 +135,49 @@ test(
         return { response, data: await response.json() };
       }
 
+      await t.test("Admin can search and filter listings independently of the review queue", async () => {
+        const version = listing.versions[0].toObject();
+        delete version._id;
+        const revised = new Listing({
+          ownerId: seller._id,
+          sellerHidden: true,
+          versions: [version, { ...version, title: "Áo caro (sửa)", status: "PENDING" }],
+        });
+        revised.approvedVersionId = revised.versions[0]._id;
+        await revised.save();
+
+        try {
+          assert.equal((await request("/admin/listings")).response.status, 401);
+          assert.equal((await request("/admin/listings", { user: seller })).response.status, 403);
+          assert.equal((await request("/admin/listings?visibility=bad", { user: admin })).response.status, 422);
+
+          const first = await request("/admin/listings?limit=1", { user: admin });
+          const second = await request("/admin/listings?page=2&limit=1", { user: admin });
+          assert.equal(first.response.status, 200);
+          assert.equal(first.data.meta.total, 2);
+          assert.equal(first.data.data.length, 1);
+          assert.equal(second.data.data.length, 1);
+          assert.notEqual(first.data.data[0].listingId, second.data.data[0].listingId);
+
+          const publicListings = await request("/admin/listings?visibility=PUBLIC&reviewStatus=APPROVED", { user: admin });
+          assert.deepEqual(publicListings.data.data.map(({ listingId }) => listingId), [String(listing._id)]);
+          assert.equal(publicListings.data.data[0].sellerName, seller.displayName);
+
+          for (const q of ["(sửa)", String(revised._id), String(revised._id).slice(-8).toUpperCase()]) {
+            const hidden = await request(`/admin/listings?visibility=HIDDEN&reviewStatus=PENDING&q=${encodeURIComponent(q)}`, { user: admin });
+            assert.equal(hidden.response.status, 200);
+            assert.equal(hidden.data.meta.total, 1);
+            assert.equal(hidden.data.data[0].listingId, String(revised._id));
+            assert.equal(hidden.data.data[0].versionId, String(revised.versions[1]._id));
+          }
+
+          const queue = await request("/admin/listing-versions", { user: admin });
+          assert.deepEqual(queue.data.data.map(({ versionId }) => versionId), [String(revised.versions[1]._id)]);
+        } finally {
+          await Listing.deleteOne({ _id: revised._id });
+        }
+      });
+
       await t.test(
         "Admin filters Cases by the assigned Support ObjectId",
         async () => {

@@ -1,0 +1,27 @@
+.case-strip {
+  display: flex;
+  gap: 20px;
+  padding: 15px 0;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 22px;
+  font-size: 11px;
+  flex-wrap: wrap;
+}
+.report-entry {
+  padding: 18px 0;
+  border-bottom: 1px solid var(--line);
+}
+.report-entry:last-child {
+  border-bottom: 0;
+}
+.report-entry > p {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 13px 0;
+}
+@media (max-width: 600px) {
+  .case-strip {
+    gap: 10px;
+    font-size: 10px;
+  }
+}

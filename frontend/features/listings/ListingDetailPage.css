@@ -1,0 +1,85 @@
+.detail {
+  display: grid;
+  grid-template-columns: 1.08fr 1fr;
+  gap: 66px;
+  padding: 10px 4% 60px;
+}
+.detail .large-art {
+  aspect-ratio: 4/4.6;
+  border-radius: 5px;
+  position: relative;
+  overflow: hidden;
+  background: #e8e4d7;
+}
+.detail-copy {
+  padding: 16px 0;
+}
+.detail h1 {
+  font-size: 42px;
+  margin: 14px 0 17px;
+}
+.detail .price {
+  font-size: 25px;
+  font-weight: 600;
+}
+.watermark {
+  position: absolute;
+  top: 45%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-12deg);
+  border: 2px solid #f7f5ec;
+  color: #fffdf2;
+  background: #314f3ecc;
+  padding: 10px 22px;
+  font-size: 20px;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+}
+.flow-note {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 17px 0 0;
+  border-top: 1px solid var(--line);
+  margin-top: 20px;
+}
+@media (max-width: 1150px) {
+  .detail {
+    gap: 35px;
+    padding-left: 0;
+    padding-right: 0;
+  }
+}
+@media (max-width: 850px) {
+  .detail {
+    grid-template-columns: 1fr 1fr;
+    gap: 25px;
+  }
+  .detail h1 {
+    font-size: 33px;
+  }
+}
+@media (max-width: 600px) {
+  .detail {
+    grid-template-columns: 1fr;
+    gap: 18px;
+    padding-bottom: 35px;
+  }
+  .detail .large-art {
+    aspect-ratio: 1.02;
+  }
+  .detail-copy {
+    padding-top: 5px;
+  }
+  .detail h1 {
+    font-size: 35px;
+  }
+  .detail .price {
+    font-size: 23px;
+  }
+  .detail .description {
+    font-size: 12px;
+  }
+}
+.detail-gallery {
+  position: relative;
+}

@@ -17,6 +17,7 @@ test("DISC feed, filters, visibility, detail DTO, and public media access", {
 
   const mongoose = require("mongoose");
   const express = require("express");
+  const sharp = require("sharp");
   const User = require("../src/models/User");
   const Listing = require("../src/models/Listing");
   const Media = require("../src/models/Media");
@@ -37,7 +38,9 @@ test("DISC feed, filters, visibility, detail DTO, and public media access", {
       { email: "seller@discovery.test", passwordHash: "unused", displayName: "Seller", emailVerifiedAt: new Date() },
       { email: "admin@discovery.test", passwordHash: "unused", displayName: "Admin", role: "ADMIN", emailVerifiedAt: new Date() },
     ]);
-    const imageBytes = Buffer.from("public-listing-image");
+    const imageBytes = await sharp({
+      create: { width: 960, height: 720, channels: 3, background: "#336644" },
+    }).png().toBuffer();
     await fs.mkdir(uploadDir, { recursive: true });
 
     async function makeListing({
@@ -189,10 +192,11 @@ test("DISC feed, filters, visibility, detail DTO, and public media access", {
     await new Promise((resolve) => server.once("listening", resolve));
     const baseUrl = `http://127.0.0.1:${server.address().port}/api/v1`;
 
-    async function request(pathname, user, { method = "GET", body } = {}) {
+    async function request(pathname, user, { method = "GET", body, headers = {} } = {}) {
       const response = await fetch(`${baseUrl}${pathname}`, {
         method,
         headers: {
+          ...headers,
           ...(user ? { "x-test-user-id": String(user._id) } : {}),
           ...(body ? { "content-type": "application/json" } : {}),
         },
@@ -309,9 +313,21 @@ test("DISC feed, filters, visibility, detail DTO, and public media access", {
       assert.equal(detail.response.status, 404, listing.versions[0].title);
     }
 
-    const publicImage = await request(`/media/${listings[0].versions[1].imageIds[0]}`);
+    const mediaPath = `/media/${listings[0].versions[1].imageIds[0]}`;
+    const publicImage = await request(mediaPath);
     assert.equal(publicImage.response.status, 200);
     assert.deepEqual(publicImage.data, imageBytes);
+    const thumbnailPath = `${mediaPath}?width=320`;
+    const thumbnail = await request(thumbnailPath);
+    assert.equal(thumbnail.response.status, 200);
+    assert.equal(thumbnail.response.headers.get("content-type"), "image/webp");
+    assert.equal((await sharp(thumbnail.data).metadata()).width, 320);
+    assert.ok(thumbnail.data.length < imageBytes.length);
+    const etag = thumbnail.response.headers.get("etag");
+    const conditional = { headers: { "if-none-match": etag, "cache-control": "max-age=0" } };
+    assert.ok(etag);
+    assert.equal((await request(thumbnailPath, undefined, conditional)).response.status, 304);
+    assert.deepEqual((await request(`${mediaPath}?width=123`)).data, imageBytes);
     const hiddenImageId = notPublic[0].versions[0].imageIds[0];
     const hiddenImage = await request(`/media/${hiddenImageId}`);
     assert.equal(hiddenImage.response.status, 404);
@@ -328,6 +344,10 @@ test("DISC feed, filters, visibility, detail DTO, and public media access", {
     assert.equal((await request("/listings")).data.meta.total, 24);
     assert.equal((await request(`/listings/${listings[0]._id}`)).response.status, 404);
     assert.equal((await request(`/media/${listings[0].versions[1].imageIds[0]}`)).response.status, 404);
+    assert.equal((await request(thumbnailPath, undefined, conditional)).response.status, 404);
+    const privateThumbnail = await request(thumbnailPath, admin);
+    assert.equal(privateThumbnail.response.status, 200);
+    assert.equal(privateThumbnail.response.headers.get("cache-control"), "private, no-store");
 
     const adminShow = await request(`/admin/listings/${listings[0]._id}/visibility`, admin, {
       method: "POST",

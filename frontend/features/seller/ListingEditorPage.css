@@ -1,0 +1,25 @@
+.preview-listing {
+  position: sticky;
+  top: 20px;
+}
+.preview-listing .art-frame {
+  aspect-ratio: 1.1;
+}
+.note-list {
+  padding: 0 0 0 16px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.note-list li {
+  padding-bottom: 7px;
+}
+@media (max-width: 850px) {
+  .preview-listing {
+    position: static;
+  }
+}
+@media (max-width: 600px) {
+  .preview-listing .art-frame {
+    aspect-ratio: 1.3;
+  }
+}

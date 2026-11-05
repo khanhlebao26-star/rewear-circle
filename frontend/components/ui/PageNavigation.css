@@ -1,0 +1,45 @@
+.breadcrumb {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 23px 0;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.breadcrumb a:hover {
+  color: var(--green);
+}
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 32px 0 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+.page-heading {
+  margin: 20px 0 32px;
+}
+.page-heading > p:last-child {
+  color: var(--muted);
+  max-width: 620px;
+  font-size: 13px;
+}
+@media (max-width: 600px) {
+  .breadcrumb {
+    font-size: 10px;
+    gap: 8px;
+    padding: 19px 0;
+  }
+  .page-heading {
+    margin: 10px 0 25px;
+  }
+  .page-heading > p:last-child {
+    font-size: 12px;
+  }
+}
+.record-id {
+  font-family: Consolas, monospace;
+  overflow-wrap: anywhere;
+}

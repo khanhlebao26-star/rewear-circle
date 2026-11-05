@@ -395,6 +395,101 @@ router.post(
 );
 
 router.get(
+  "/admin/listings",
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    const { q = "", reviewStatus, visibility } = req.query;
+    const pagination = readPagination(req.query);
+    if (
+      !pagination ||
+      !Number.isSafeInteger((pagination.page - 1) * pagination.limit) ||
+      Object.keys(req.query).some((key) => !["page", "limit", "q", "reviewStatus", "visibility"].includes(key)) ||
+      typeof q !== "string" || q.length > 100 ||
+      (reviewStatus !== undefined && !["PENDING", "APPROVED", "REJECTED"].includes(reviewStatus)) ||
+      (visibility !== undefined && !["PUBLIC", "HIDDEN", "UNPUBLISHED"].includes(visibility))
+    ) {
+      return fail(req, res, 422, "VALIDATION_ERROR", "Bộ lọc hoặc phân trang không hợp lệ.");
+    }
+
+    const { page, limit } = pagination;
+    const keyword = q.trim();
+    const filter = {};
+    if (reviewStatus) filter["latestVersion.status"] = reviewStatus;
+    if (visibility) filter.visibility = visibility;
+    if (keyword) {
+      const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      filter.$or = [{ "latestVersion.title": { $regex: escaped, $options: "i" } }];
+      if (/^[a-f\d]{24}$/i.test(keyword)) {
+        filter.$or.push({ _id: new mongoose.Types.ObjectId(keyword) });
+      } else if (/^[a-f\d]{8}$/i.test(keyword)) {
+        filter.$or.push({
+          $expr: { $eq: [
+            { $substrBytes: [{ $toString: "$_id" }, 16, 8] },
+            keyword.toLowerCase(),
+          ] },
+        });
+      }
+    }
+
+    const [result] = await Listing.aggregate([
+      { $set: {
+        latestVersion: { $arrayElemAt: ["$versions", -1] },
+        approvedVersion: { $first: { $filter: {
+          input: { $ifNull: ["$versions", []] },
+          as: "version",
+          cond: { $eq: ["$$version._id", "$approvedVersionId"] },
+        } } },
+      } },
+      { $set: { visibility: { $switch: {
+        branches: [
+          { case: { $or: ["$adminHidden", "$sellerHidden"] }, then: "HIDDEN" },
+          { case: { $and: [
+            { $eq: ["$approvedVersion.status", "APPROVED"] },
+            { $in: ["$saleStatus", ["AVAILABLE", "RESERVED", "SOLD"]] },
+            { $not: [{ $or: ["$reviewHold", "$correctionRequested", "$paymentReviewHold"] }] },
+          ] }, then: "PUBLIC" },
+        ],
+        default: "UNPUBLISHED",
+      } } } },
+      { $match: filter },
+      { $sort: { createdAt: -1, _id: -1 } },
+      { $facet: {
+        items: [
+          { $skip: (page - 1) * limit },
+          { $limit: limit },
+          { $lookup: {
+            from: User.collection.name,
+            localField: "ownerId",
+            foreignField: "_id",
+            as: "seller",
+          } },
+          { $project: {
+            _id: 0,
+            listingId: "$_id",
+            versionId: "$latestVersion._id",
+            title: "$latestVersion.title",
+            price: "$latestVersion.price",
+            imageId: { $arrayElemAt: ["$latestVersion.imageIds", 0] },
+            reviewStatus: "$latestVersion.status",
+            sellerName: { $arrayElemAt: ["$seller.displayName", 0] },
+            saleStatus: 1,
+            visibility: 1,
+          } },
+        ],
+        total: [{ $count: "count" }],
+      } },
+    ]);
+
+    return success(req, res, result?.items || [], 200, {
+      page,
+      limit,
+      total: result?.total[0]?.count || 0,
+    });
+  },
+);
+
+router.get(
   "/admin/listing-versions",
   requireAuth,
   requireAdmin,
