@@ -1,0 +1,36 @@
+.brand {
+  display: inline-flex;
+  gap: 9px;
+  align-items: center;
+  font-size: 23px;
+  letter-spacing: -0.06em;
+  white-space: nowrap;
+  font-weight: 650;
+}
+.brand i {
+  font-family: Georgia, serif;
+  font-style: italic;
+  font-weight: 400;
+  display: grid;
+  place-items: center;
+  width: 37px;
+  height: 37px;
+  border: 1px solid var(--sage);
+  border-radius: 50%;
+  font-size: 29px;
+}
+.brand span span {
+  font-weight: 350;
+  color: var(--sage);
+}
+@media (max-width: 600px) {
+  .brand {
+    font-size: 19px;
+    gap: 7px;
+  }
+  .brand i {
+    width: 31px;
+    height: 31px;
+    font-size: 25px;
+  }
+}

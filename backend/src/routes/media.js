@@ -3,6 +3,7 @@ const mongoose = require("mongoose");
 const multer = require("multer");
 const path = require("node:path");
 const fs = require("node:fs/promises");
+const sharp = require("sharp");
 const { randomUUID } = require("node:crypto");
 const Media = require("../models/Media");
 const Listing = require("../models/Listing");
@@ -26,6 +27,7 @@ const {
 const { success, failure: fail } = require("../http/responses");
 
 const uploadDir = path.resolve(__dirname, "../../uploads");
+const thumbnailWidths = new Set(["160", "320", "640"]);
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { files: 5, fileSize: 5 * 1024 * 1024 },
@@ -357,8 +359,31 @@ router.get("/media/:id", async (req, res) => {
 
   if (audit) res.set("Cache-Control", "private, no-store");
   res.set("X-Content-Type-Options", "nosniff");
+  const filename = path.join(uploadDir, media.filename);
+  const { width } = req.query;
+  if (media.purpose === "LISTING" && thumbnailWidths.has(width)) {
+    if (!audit) {
+      res.set("Cache-Control", "private, no-cache");
+      res.set("ETag", `"${media._id}-webp-${width}-v1"`);
+      if (req.fresh) return res.status(304).end();
+    }
+
+    const thumbnail = await sharp(filename, {
+      autoOrient: true,
+      limitInputPixels: 24_000_000,
+    })
+      .resize({ width: Number(width), withoutEnlargement: true })
+      .webp({ quality: 78 })
+      .toBuffer()
+      .catch(() => null);
+
+    if (thumbnail && thumbnail.length < media.size) {
+      return res.type("image/webp").send(thumbnail);
+    }
+    res.removeHeader("ETag");
+  }
   res.type(media.mimeType);
-  return res.sendFile(path.join(uploadDir, media.filename));
+  return res.sendFile(filename);
 });
 
 module.exports = router;

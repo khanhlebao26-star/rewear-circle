@@ -1,0 +1,89 @@
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--paper);
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+  text-align: left;
+  font-size: 11px;
+}
+th {
+  padding: 13px 17px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 500;
+  background: #f0f3e9;
+  white-space: nowrap;
+}
+td {
+  padding: 17px;
+  border-top: 1px solid var(--line);
+  vertical-align: middle;
+}
+td strong {
+  font-weight: 550;
+  font-size: 12px;
+}
+tr:hover td {
+  background: #f8faf2;
+}
+td a {
+  color: var(--green);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.table-filter {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.table-filter input,
+.table-filter select {
+  padding: 9px 12px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 11px;
+  min-height: 38px;
+  max-width: 100%;
+}
+@media (max-width: 600px) {
+  .table-filter {
+    gap: 7px;
+  }
+  .table-filter > * {
+    flex: 1;
+    min-width: 115px;
+  }
+  th,
+  td {
+    padding: 12px;
+    font-size: 10px;
+  }
+  td strong {
+    font-size: 11px;
+  }
+}
+.table-filter {
+  align-items: end;
+}
+.table-filter .field {
+  margin: 0;
+}
+.table-filter .check-label {
+  align-self: center;
+  margin: 0;
+}
+@media (max-width: 600px) {
+  .table-filter .field {
+    flex: 1;
+    min-width: 125px;
+  }
+  .table-filter .check-label {
+    flex-basis: 100%;
+  }
+}

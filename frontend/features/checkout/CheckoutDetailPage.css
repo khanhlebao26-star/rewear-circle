@@ -1,0 +1,33 @@
+.success-mark {
+  display: grid;
+  place-items: center;
+  width: 68px;
+  height: 68px;
+  border: 1px solid #a9b99c;
+  background: #e6eddc;
+  border-radius: 50%;
+  margin: 0 auto 24px;
+}
+.success-top {
+  text-align: center;
+  max-width: 580px;
+  margin: 40px auto 33px;
+}
+.success-top h1 {
+  font-size: 38px;
+}
+.success-top p {
+  color: var(--muted);
+  font-size: 13px;
+}
+@media (max-width: 600px) {
+  .success-top {
+    margin: 25px auto;
+  }
+  .success-top h1 {
+    font-size: 31px;
+  }
+  .success-top p {
+    font-size: 12px;
+  }
+}

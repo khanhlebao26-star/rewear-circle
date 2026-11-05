@@ -1,0 +1,123 @@
+.muted {
+  color: var(--muted);
+}
+.eyebrow {
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.17em;
+  color: var(--sage);
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+.shell {
+  width: min(1240px, calc(100% - 80px));
+  margin: auto;
+}
+.row {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+.between {
+  justify-content: space-between;
+}
+.wrap {
+  flex-wrap: wrap;
+}
+.stack {
+  display: grid;
+  gap: 18px;
+}
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+.right {
+  text-align: right;
+}
+.center {
+  text-align: center;
+}
+.m0 {
+  margin: 0;
+}
+.mb {
+  margin-bottom: 24px;
+}
+.mt {
+  margin-top: 24px;
+}
+.rule {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 24px 0;
+}
+.title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 20px;
+  margin-bottom: 23px;
+}
+.title-row h2 {
+  font-size: 33px;
+  margin: 0;
+}
+.page {
+  padding: 8px 0 60px;
+  min-height: 580px;
+}
+.description {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.8;
+}
+.description strong {
+  color: var(--ink);
+}
+.caption {
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 10px;
+}
+@media (max-width: 1150px) {
+  .shell {
+    width: calc(100% - 48px);
+  }
+}
+@media (max-width: 600px) {
+  .shell {
+    width: calc(100% - 32px);
+  }
+  .title-row h2 {
+    font-size: 27px;
+  }
+  .title-row {
+    gap: 10px;
+  }
+  .title-row .small {
+    font-size: 10px;
+  }
+  .page {
+    min-height: 520px;
+    padding-bottom: 40px;
+  }
+  .right .row {
+    justify-content: end;
+  }
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.description {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

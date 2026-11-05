@@ -1,0 +1,43 @@
+.upload-zone {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 26px 16px;
+  background: #f3f5ec;
+  border: 1px dashed #b9c8ac;
+  border-radius: 6px;
+  text-align: center;
+  cursor: pointer;
+}
+.upload-zone > span {
+  font-size: 10px;
+  color: var(--muted);
+}
+.upload-zone input {
+  font-size: 11px;
+  max-width: 100%;
+  margin-top: 8px;
+}
+.upload-previews {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+.upload-previews > div {
+  width: 85px;
+  height: 96px;
+  position: relative;
+}
+.upload-previews .icon-btn {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  width: 25px;
+  height: 25px;
+  min-width: 25px;
+  min-height: 25px;
+  padding: 3px;
+}

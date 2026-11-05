@@ -1,0 +1,45 @@
+.field {
+  display: grid;
+  gap: 7px;
+  font-size: 12px;
+  margin-bottom: 19px;
+  min-width: 0;
+}
+.field > span:first-child {
+  font-weight: 550;
+}
+.field small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 400;
+}
+.field input,
+.field select,
+.field textarea {
+  width: 100%;
+  border: 1px solid #d5dccf;
+  border-radius: 4px;
+  background: var(--paper);
+  padding: 11px 12px;
+  color: var(--ink);
+  min-width: 0;
+}
+.field textarea {
+  resize: vertical;
+  min-height: 105px;
+}
+.field input:disabled {
+  background: #f0f1e9;
+  color: var(--muted);
+}
+.check-label {
+  display: flex;
+  align-items: start;
+  gap: 9px;
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+.check-label input {
+  accent-color: var(--green);
+  margin-top: 5px;
+}

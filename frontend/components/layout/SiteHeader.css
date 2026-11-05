@@ -1,0 +1,154 @@
+.skip {
+  position: fixed;
+  left: 12px;
+  top: -100px;
+  background: var(--paper);
+  z-index: 99;
+  padding: 12px;
+}
+.skip:focus {
+  top: 48px;
+}
+.topline {
+  background: var(--soft);
+  font-size: 10px;
+  letter-spacing: 0.13em;
+  padding: 7px 0;
+  color: var(--sage);
+}
+.header {
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+}
+.nav {
+  min-height: 84px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 28px;
+}
+.navlinks {
+  display: flex;
+  align-items: center;
+  gap: 27px;
+  font-size: 12px;
+}
+.navlinks a {
+  padding: 10px 0;
+}
+.navlinks a:hover {
+  color: var(--clay);
+}
+.navlinks a.active {
+  border-bottom: 1px solid var(--green);
+}
+.nav-actions {
+  display: flex;
+  gap: 17px;
+  align-items: center;
+}
+.count {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  background: var(--green);
+  color: white;
+  border-radius: 20px;
+  font-size: 9px;
+  min-width: 15px;
+  height: 15px;
+  text-align: center;
+}
+.avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #e8eadd;
+  font-size: 10px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #d1d8c8;
+}
+.mobile-menu {
+  display: none;
+}
+@media (max-width: 1150px) {
+  .navlinks {
+    gap: 16px;
+  }
+  .nav-actions {
+    gap: 8px;
+  }
+}
+@media (max-width: 850px) {
+  .navlinks {
+    display: none;
+  }
+  .mobile-menu {
+    display: inline-flex;
+  }
+}
+@media (max-width: 600px) {
+  .topline {
+    font-size: 8px;
+    padding: 6px 0;
+  }
+  .topline .motto {
+    display: none;
+  }
+  .nav {
+    min-height: 70px;
+    gap: 8px;
+  }
+  .nav-actions {
+    gap: 3px;
+  }
+  .nav-actions .sell-nav {
+    display: none;
+  }
+  .nav-actions .icon-btn {
+    padding: 5px;
+    min-width: 30px;
+    min-height: 30px;
+  }
+  .nav-actions .icon-btn svg {
+    width: 18px;
+    height: 18px;
+  }
+}
+.skip:focus {
+  top: 12px;
+}
+.header-menu {
+  position: relative;
+}
+.header-menu summary {
+  cursor: pointer;
+  list-style: none;
+}
+.header-menu summary::-webkit-details-marker {
+  display: none;
+}
+.header-dropdown {
+  position: absolute;
+  z-index: 20;
+  right: 0;
+  top: calc(100% + 15px);
+  width: 270px;
+  padding: 22px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 15px 40px #263b3220;
+}
+.header-dropdown strong {
+  font-size: 13px;
+}
+@media (max-width: 600px) {
+  .header-dropdown {
+    position: fixed;
+    top: 108px;
+    right: 16px;
+    max-width: calc(100vw - 32px);
+  }
+}

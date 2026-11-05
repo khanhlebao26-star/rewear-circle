@@ -17,6 +17,7 @@ test("DISC feed, filters, visibility, detail DTO, and public media access", {
 
   const mongoose = require("mongoose");
   const express = require("express");
+  const sharp = require("sharp");
   const User = require("../src/models/User");
   const Listing = require("../src/models/Listing");
   const Media = require("../src/models/Media");
@@ -37,7 +38,9 @@ test("DISC feed, filters, visibility, detail DTO, and public media access", {
       { email: "seller@discovery.test", passwordHash: "unused", displayName: "Seller", emailVerifiedAt: new Date() },
       { email: "admin@discovery.test", passwordHash: "unused", displayName: "Admin", role: "ADMIN", emailVerifiedAt: new Date() },
     ]);
-    const imageBytes = Buffer.from("public-listing-image");
+    const imageBytes = await sharp({
+      create: { width: 960, height: 720, channels: 3, background: "#336644" },
+    }).png().toBuffer();
     await fs.mkdir(uploadDir, { recursive: true });
 
     async function makeListing({
@@ -189,10 +192,11 @@ test("DISC feed, filters, visibility, detail DTO, and public media access", {
     await new Promise((resolve) => server.once("listening", resolve));
     const baseUrl = `http://127.0.0.1:${server.address().port}/api/v1`;
 
-    async function request(pathname, user, { method = "GET", body } = {}) {
+    async function request(pathname, user, { method = "GET", body, headers = {} } = {}) {
       const response = await fetch(`${baseUrl}${pathname}`, {
         method,
         headers: {
+          ...headers,
           ...(user ? { "x-test-user-id": String(user._id) } : {}),
           ...(body ? { "content-type": "application/json" } : {}),
         },
@@ -216,8 +220,13 @@ test("DISC feed, filters, visibility, detail DTO, and public media access", {
     assert.equal("correctionReason" in guestFeed.data.data[0], false);
 
     const guestFilter = await request("/listings?q=cedar");
-    assert.equal(guestFilter.response.status, 401);
-    assert.equal(guestFilter.data.error.code, "UNAUTHORIZED");
+    assert.equal(guestFilter.response.status, 200);
+    assert.equal(guestFilter.data.meta.total, 1);
+    assert.equal(guestFilter.data.data[0].title, "Cedar cotton tee");
+    assert.equal((await request("/cart")).response.status, 401);
+    assert.equal((await request("/checkouts", undefined, {
+      method: "POST", body: {},
+    })).response.status, 401);
 
     const secondPage = await request("/listings?page=2&limit=20");
     assert.equal(secondPage.data.data.length, 5);
@@ -235,7 +244,7 @@ test("DISC feed, filters, visibility, detail DTO, and public media access", {
     const publicIds = new Set(maxPageSize.data.data.map((item) => item.listingId));
     assert.equal(publicIds.has(String(reserved._id)), false);
     assert.equal(publicIds.has(String(sold._id)), false);
-    const badLimit = await request("/listings?limit=101", buyer);
+    const badLimit = await request("/listings?limit=101");
     assert.equal(badLimit.response.status, 422);
     assert.equal(badLimit.data.error.code, "VALIDATION_ERROR");
 
@@ -247,17 +256,18 @@ test("DISC feed, filters, visibility, detail DTO, and public media access", {
       ["minPrice=120000", (item) => item.price >= 120000],
       ["maxPrice=120000", (item) => item.price <= 120000],
     ];
-    for (const [query, matches] of filterCases) {
-      const result = await request(`/listings?${query}&limit=100`, buyer);
-      assert.equal(result.response.status, 200, query);
-      assert.ok(result.data.data.length > 0, query);
-      assert.ok(result.data.data.every(matches), query);
-      assert.equal(result.data.meta.total, result.data.data.length, query);
+    for (const user of [undefined, buyer]) {
+      for (const [query, matches] of filterCases) {
+        const result = await request(`/listings?${query}&limit=100`, user);
+        assert.equal(result.response.status, 200, query);
+        assert.ok(result.data.data.length > 0, query);
+        assert.ok(result.data.data.every(matches), query);
+        assert.equal(result.data.meta.total, result.data.data.length, query);
+      }
     }
 
     const combined = await request(
       "/listings?q=cedar&category=%C3%81o&size=M&condition=C%C3%B2n+t%E1%BB%91t&minPrice=120000&maxPrice=120000",
-      buyer,
     );
     assert.equal(combined.response.status, 200);
     assert.equal(combined.data.meta.total, 1);
@@ -275,7 +285,7 @@ test("DISC feed, filters, visibility, detail DTO, and public media access", {
       "minPrice=500000&maxPrice=20000",
       "unknown=value",
     ]) {
-      const result = await request(`/listings?${query}`, buyer);
+      const result = await request(`/listings?${query}`);
       assert.equal(result.response.status, 422, query);
       assert.equal(result.data.error.code, "VALIDATION_ERROR", query);
     }
@@ -303,9 +313,21 @@ test("DISC feed, filters, visibility, detail DTO, and public media access", {
       assert.equal(detail.response.status, 404, listing.versions[0].title);
     }
 
-    const publicImage = await request(`/media/${listings[0].versions[1].imageIds[0]}`);
+    const mediaPath = `/media/${listings[0].versions[1].imageIds[0]}`;
+    const publicImage = await request(mediaPath);
     assert.equal(publicImage.response.status, 200);
     assert.deepEqual(publicImage.data, imageBytes);
+    const thumbnailPath = `${mediaPath}?width=320`;
+    const thumbnail = await request(thumbnailPath);
+    assert.equal(thumbnail.response.status, 200);
+    assert.equal(thumbnail.response.headers.get("content-type"), "image/webp");
+    assert.equal((await sharp(thumbnail.data).metadata()).width, 320);
+    assert.ok(thumbnail.data.length < imageBytes.length);
+    const etag = thumbnail.response.headers.get("etag");
+    const conditional = { headers: { "if-none-match": etag, "cache-control": "max-age=0" } };
+    assert.ok(etag);
+    assert.equal((await request(thumbnailPath, undefined, conditional)).response.status, 304);
+    assert.deepEqual((await request(`${mediaPath}?width=123`)).data, imageBytes);
     const hiddenImageId = notPublic[0].versions[0].imageIds[0];
     const hiddenImage = await request(`/media/${hiddenImageId}`);
     assert.equal(hiddenImage.response.status, 404);
@@ -322,6 +344,10 @@ test("DISC feed, filters, visibility, detail DTO, and public media access", {
     assert.equal((await request("/listings")).data.meta.total, 24);
     assert.equal((await request(`/listings/${listings[0]._id}`)).response.status, 404);
     assert.equal((await request(`/media/${listings[0].versions[1].imageIds[0]}`)).response.status, 404);
+    assert.equal((await request(thumbnailPath, undefined, conditional)).response.status, 404);
+    const privateThumbnail = await request(thumbnailPath, admin);
+    assert.equal(privateThumbnail.response.status, 200);
+    assert.equal(privateThumbnail.response.headers.get("cache-control"), "private, no-store");
 
     const adminShow = await request(`/admin/listings/${listings[0]._id}/visibility`, admin, {
       method: "POST",

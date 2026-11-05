@@ -135,7 +135,7 @@ Response không tiết lộ email đã tồn tại, chưa xác minh hay không �
 
 - **Method:** GET
 - **Route:** /listings
-- **Quyền:** Công khai khi không có tham số tìm kiếm/lọc; Tài khoản khi sử dụng tìm kiếm/lọc
+- **Quyền:** Công khai, bao gồm tìm kiếm và lọc
 - **Phân loại:** Cốt lõi
 Trả về danh sách tin đủ điều kiện xuất hiện công khai.
 
@@ -154,7 +154,7 @@ Quy tắc:
 - Giá lọc được tính bằng VND.
 - Có thể bỏ trống một trong hai đầu giá.
 - Nếu minPrice > maxPrice, trả VALIDATION_ERROR.
-- Tìm kiếm/lọc cần tài khoản; feed không tham số tìm kiếm vẫn công khai.
+- Guest được xem danh sách, tìm kiếm, lọc và mở chi tiết tin được phép công khai mà không cần đăng nhập.
 - Phân trang dùng page/limit, mặc định 20, tối đa 100; sắp xếp mới nhất trước và chỉ lọc revision đang được duyệt.
 ### **DISC-02 — Xem chi tiết tin**
 

@@ -33,7 +33,7 @@ Always combine `compose.yaml` and `compose.operations.yaml` for the supported Do
 
 Nginx publishes `http://localhost:3001`; frontend, backend, MongoDB and SMTP use internal ports. Mailpit is at `http://localhost:8026`. Use `localhost` so the browser origin matches session and Origin checks. Nginx overwrites client-supplied forwarded headers; the API explicitly trusts one hop through `TRUST_PROXY_HOPS=1`, independently of `NODE_ENV`. The HTTP demo keeps `NODE_ENV=development`.
 
-The frontend home page is the DISC feed and `/listings/{listingId}` is the public detail view. Guests can browse the feed; search and filters require a signed-in session. The demo seed includes a verified buyer and seller for local acceptance.
+The frontend home page is the DISC feed and `/listings/{listingId}` is the public detail view. Guests can browse, search, filter, and open public listing details without signing in. Cart, checkout, selling, and reporting keep their existing account and email-verification requirements. The demo seed includes a verified buyer and seller for local acceptance.
 
 Start and check the runtime:
 

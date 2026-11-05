@@ -1,0 +1,29 @@
+.order-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  overflow: hidden;
+}
+.order-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+  background: #fafbf5;
+}
+.order-body {
+  padding: 20px;
+}
+@media (max-width: 600px) {
+  .order-head {
+    padding: 13px;
+    font-size: 10px;
+    flex-wrap: wrap;
+  }
+  .order-body {
+    padding: 15px;
+  }
+}

@@ -19,9 +19,11 @@ RUN npm run build
 FROM node:24-bookworm-slim AS runtime
 
 WORKDIR /app
-ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0
+ARG API_UPSTREAM=http://backend:4000
+ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0 API_UPSTREAM=${API_UPSTREAM}
 COPY --from=build --chown=node:node /app/.next/standalone ./
 COPY --from=build --chown=node:node /app/.next/static ./.next/static
+COPY --from=build --chown=node:node /app/public ./public
 RUN mkdir -p .next/cache && chown -R node:node .next
 USER node
 

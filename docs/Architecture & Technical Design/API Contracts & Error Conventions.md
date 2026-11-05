@@ -37,7 +37,7 @@ Các mô-đun là cách chia chức năng logic. MVP không bắt buộc phải 
 
 ### **1.2. Quy tắc nghiệp vụ bắt buộc**
 
-- Guest chỉ được xem feed và chi tiết tin công khai. Các chức năng tìm kiếm/lọc, giỏ hàng, mua hàng, đăng bán và báo cáo yêu cầu đăng nhập.
+- Guest được xem feed, tìm kiếm, lọc và mở chi tiết tin công khai mà không cần đăng nhập. Giỏ hàng, mua hàng, đăng bán và báo cáo giữ các yêu cầu đăng nhập và xác minh email tương ứng.
 - Sau khi đăng nhập, người dùng quay lại trang trước đó và tự thực hiện lại thao tác. Hệ thống không tự động thực hiện thao tác bị gián đoạn.
 - Một tài khoản đã đăng nhập có thể vừa mua hàng vừa đăng tin bán. Không yêu cầu duyệt hồ sơ Seller riêng.
 - Người dùng không được mua tin do chính mình đăng.
@@ -255,11 +255,11 @@ GET /listings
 - Guest được xem danh sách tin công khai.
 - Chỉ trả về tin đã được duyệt, đang hiển thị và đủ điều kiện xuất hiện trong feed.
 - Các tham số tìm kiếm/lọc dự kiến gồm q, category, size, condition, minPrice, maxPrice.
-- Theo chính sách hiện tại, tìm kiếm và lọc yêu cầu đăng nhập.
+- Tìm kiếm và lọc công khai, không yêu cầu đăng nhập.
 - Giá được tính bằng VND.
 - Có thể chỉ truyền một trong hai tham số giá.
 - Nếu minPrice > maxPrice, trả VALIDATION_ERROR.
-- Tìm kiếm/lọc cần đăng nhập. Phân trang dùng page/limit, mặc định 20, tối đa 100; chỉ tìm trên revision đang được duyệt.
+- Phân trang dùng page/limit, mặc định 20, tối đa 100; chỉ tìm trên revision đang được duyệt và đủ điều kiện công khai.
 Ví dụ:
 
 GET /api/v1/listings?q=vintage&minPrice=100000&maxPrice=300000
