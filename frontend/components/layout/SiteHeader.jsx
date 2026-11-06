@@ -7,6 +7,8 @@ import { categories } from "@/lib/api.mjs";
 import { Icon } from "@/components/ui/Icon";
 import { Brand } from "@/components/layout/Brand";
 
+const greenImpactHref = "/#thoi-trang-tuan-hoan";
+
 export default function SiteHeader({
   user,
   cartCount = 0,
@@ -93,6 +95,9 @@ export default function SiteHeader({
                 {category}
               </Link>
             ))}
+            <Link href={greenImpactHref} className="impact-nav">
+              <Icon name="earth" size={16} /> Tác động xanh
+            </Link>
           </nav>
           <div className="nav-actions">
             <Link
@@ -179,6 +184,9 @@ export default function SiteHeader({
                     {category}
                   </Link>
                 ))}
+                <Link className="side-link impact-nav" href={greenImpactHref}>
+                  <Icon name="earth" size={16} /> Tác động xanh
+                </Link>
                 {links.map(([href, text]) => (
                   <Link className="side-link" key={href} href={href}>
                     {text}
