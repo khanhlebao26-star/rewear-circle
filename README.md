@@ -1,93 +1,120 @@
 # Rewear Circle
 
-Rewear Circle is a marketplace for second-hand clothing. The repository keeps the Express API in `backend/` and adds a Next.js App Router frontend in `frontend/`.
+<img src="frontend/public/rewear-circle-mark.png" width="112" height="112" alt="Biểu tượng Rewear Circle">
 
-## Structure
+**Mặc lại điều bạn yêu.** Rewear Circle là dự án mua bán thời trang secondhand. Người mua tìm món đồ phù hợp và đặt hàng thanh toán khi nhận hàng (COD). Người bán đăng, sửa và quản lý tin. Tin đăng được kiểm duyệt trước khi xuất hiện công khai.
 
-- `backend/` — Express API, MongoDB models, scripts, and tests.
-- `frontend/` — Next.js frontend. In Docker, Nginx routes `/api/v1/*` directly to the API and other requests to Next.js. The Next.js rewrite remains available for host-side development.
-- `docs/` — architecture, API contracts, and runbooks.
+## Tính năng
 
-## Configuration
+| Vai trò | Có thể làm gì |
+| --- | --- |
+| Khách | Xem, tìm kiếm và lọc sản phẩm theo danh mục, kích cỡ, tình trạng và khoảng giá. Mở chi tiết sản phẩm khi chưa đăng nhập. |
+| Người mua | Đăng ký và xác minh email, quản lý giỏ hàng, đặt COD, theo dõi đơn, xác nhận đã nhận hàng và gửi khiếu nại khi đủ điều kiện. |
+| Người bán | Đăng hoặc sửa tin, quản lý tủ đồ, ẩn hoặc hiện lại tin theo trạng thái, cập nhật giao hàng và ghi nhận thu COD. |
+| Quản trị viên | Duyệt tin, tra cứu toàn bộ tin đăng, quản lý hiển thị, xử lý vụ việc, phân công hỗ trợ và xử lý yêu cầu hoàn COD. |
+| Nhân viên hỗ trợ | Xem vụ đang mở được phân công. Mỗi lần đọc thông tin liên hệ người nhận cần có lý do. |
 
-Copy `.env.example` to the root `.env` and set a private `SESSION_SECRET` before Compose startup. Retention defaults to `RETENTION_MODE=dry-run`; change it to `apply` only after checking the target database and backup workflow. For host-side backend development, copy `backend/.env.example` to `backend/.env`. Keep both `.env` files, uploads, backups, and `node_modules` out of images and Git. In containers, provide configuration through environment variables; the backend loads `.env` only when that file exists.
+Trang chủ có hai nhóm sản phẩm, mỗi nhóm tối đa bốn món, và phần **Tác động xanh** với số liệu minh họa. Trang chi tiết gợi ý các món cùng danh mục.
 
-The frontend rewrite uses `API_UPSTREAM` (default `http://localhost:4000`). A Compose build should set it to the backend service address, for example `http://backend:4000`.
+## Công nghệ và cấu trúc
 
-## Build images
+| Thành phần | Công nghệ và vị trí |
+| --- | --- |
+| Giao diện | Next.js App Router, React, JavaScript và CSS trong [`frontend/`](frontend/) |
+| API | Node.js 24 và Express trong [`backend/`](backend/) |
+| Dữ liệu | MongoDB replica set và Mongoose. MongoDB lưu dữ liệu và phiên đăng nhập, còn ảnh tải lên nằm trong volume riêng. |
+| Môi trường chạy | Docker Compose, Nginx định tuyến trang và API cùng origin, Mailpit nhận email xác minh trong môi trường demo. |
+| Kiểm thử | Node.js Test Runner, Playwright và GitHub Actions. |
 
-Build each image from its own context. Dependencies are installed in the Node 24 image from the checked-in lockfiles:
+Thư mục [`docker/`](docker/) chứa cấu hình gateway và script sao lưu, khôi phục. Thư mục [`docs/`](docs/) chứa đặc tả và hướng dẫn vận hành.
 
-```sh
-docker build -t rewear-circle-backend ./backend
-docker build --build-arg API_UPSTREAM=http://backend:4000 -t rewear-circle-frontend ./frontend
+## Chạy trên máy cá nhân
+
+Cài Git và khởi động [Docker Desktop trên Windows](https://docs.docker.com/desktop/setup/install/windows-install/) hoặc [Docker Engine với Compose trên Linux](https://docs.docker.com/compose/install/). Khi chạy toàn bộ ứng dụng qua Docker, Node.js được cài trong image.
+
+### 1. Tạo cấu hình
+
+Mở PowerShell ở thư mục gốc của repo:
+
+```powershell
+if (-not (Test-Path -LiteralPath '.env')) {
+    Copy-Item -LiteralPath '.env.example' -Destination '.env'
+}
 ```
 
-The backend image contains source and test code, but not `.env`, uploads, or host `node_modules`. The frontend runtime image contains the Next.js standalone build only.
+Trong `.env`, đặt `SESSION_SECRET` thành chuỗi ngẫu nhiên dài và giữ `RETENTION_MODE=dry-run` cho lần chạy đầu. Có thể tạo giá trị bí mật bằng lệnh dưới đây rồi dán vào `.env`. Giữ `.env` và bản sao lưu ngoài Git.
 
-If a dev container bind-mounts source at `/app`, it must mount a separate volume at `/app/node_modules`; never mount host `node_modules`.
-
-## Runtime
-
-Always combine `compose.yaml` and `compose.operations.yaml` for the supported Docker runtime. Compose uses the `rewear-circle-src` project name with the `rewear_circle_demo` database and explicitly named `rewear-circle-demo-*` data volumes. Changing the project name does not migrate data from the existing `rewear-mongo-data` volume.
-
-Nginx publishes `http://localhost:3001`; frontend, backend, MongoDB and SMTP use internal ports. Mailpit is at `http://localhost:8026`. Use `localhost` so the browser origin matches session and Origin checks. Nginx overwrites client-supplied forwarded headers; the API explicitly trusts one hop through `TRUST_PROXY_HOPS=1`, independently of `NODE_ENV`. The HTTP demo keeps `NODE_ENV=development`.
-
-The frontend home page is the DISC feed and `/listings/{listingId}` is the public detail view. Guests can browse, search, filter, and open public listing details without signing in. Cart, checkout, selling, and reporting keep their existing account and email-verification requirements. The demo seed includes a verified buyer and seller for local acceptance.
-
-Start and check the runtime:
-
-```sh
-docker compose -f compose.yaml -f compose.operations.yaml --profile retention up --build -d --wait backend frontend retention-scheduler
-docker compose -f compose.yaml -f compose.operations.yaml up -d --no-deps --force-recreate --wait gateway
-docker compose -f compose.yaml -f compose.operations.yaml --profile retention ps
-docker compose -f compose.yaml -f compose.operations.yaml logs --tail=100 backend gateway retention-scheduler
+```powershell
+[guid]::NewGuid().ToString('N') + [guid]::NewGuid().ToString('N')
 ```
 
-Stop services without removing their containers or volumes:
+### 2. Khởi động
 
-```sh
-docker compose -f compose.yaml -f compose.operations.yaml --profile retention stop
+```powershell
+docker compose -f compose.yaml -f compose.operations.yaml config --quiet
+docker compose -f compose.yaml -f compose.operations.yaml up --build -d --wait gateway
+docker compose -f compose.yaml -f compose.operations.yaml ps
 ```
 
-Do not use `docker compose down -v` as a normal stop command; it removes named volumes and their data.
+- Mở [Rewear Circle](http://localhost:3001) để dùng ứng dụng. Dùng đúng hostname `localhost` để khớp cấu hình phiên đăng nhập và kiểm tra origin.
+- Mở [Mailpit](http://localhost:8026) để xem mã xác minh khi đăng ký tài khoản.
+- Thử [API danh sách sản phẩm](http://localhost:3001/api/v1/listings?limit=4) để kiểm tra gateway và backend.
 
-Recreate `gateway` after backend/frontend containers are replaced so Nginx resolves their current addresses. The first startup command respects the current `RETENTION_MODE` in the root `.env`; `apply` starts a retention cycle immediately.
+### 3. Thêm dữ liệu mẫu nếu cần
 
-## Development and operations
+Tài khoản có thể đăng ký và xác minh qua Mailpit. Nếu muốn tạo nhanh dữ liệu trên cơ sở dữ liệu demo, chạy lệnh seed. Dự án không tự chạy seed khi khởi động.
 
-Compose profiles keep test, maintenance, restore, and scheduled retention services out of the default runtime:
-
-```sh
-# Hot reload at http://localhost:3011
-docker compose -f compose.yaml -f compose.operations.yaml --profile dev up --build -d --wait backend-dev frontend-dev
-docker compose -f compose.yaml -f compose.operations.yaml --profile dev up -d --no-deps --force-recreate --wait gateway-dev
-docker compose -f compose.yaml -f compose.operations.yaml --profile dev stop gateway-dev backend-dev frontend-dev
-
-# Serial test suites against a private MongoDB replica set and _test database
-docker compose -f compose.yaml -f compose.operations.yaml --profile test run --build --rm test-runner
-
-# Explicit seed on the demo database; never runs at startup
+```powershell
 docker compose -f compose.yaml -f compose.operations.yaml run --rm backend npm run seed
-
-# Read-only audit and dry-runs
-docker compose -f compose.yaml -f compose.operations.yaml --profile ops run --build --rm maintenance npm run audit:fulfillment-data
-docker compose -f compose.yaml -f compose.operations.yaml --profile ops run --build --rm maintenance npm run migrate:fulfillment-data
-docker compose -f compose.yaml -f compose.operations.yaml --profile ops run --build --rm maintenance npm run retention:cases -- --dry-run
 ```
 
-## Retention and logs
+Để nhập [bộ sản phẩm mẫu](backend/src/scripts/data/demo-catalog.json), nhập email của một tài khoản người bán đã xác minh trong cùng cơ sở dữ liệu khi PowerShell hỏi. Có thể dùng `seller1@rewear.local` sau khi chạy seed.
 
-The scheduler runs immediately and then approximately every 24 hours; failures are retried after 10 minutes. For an `apply` cycle with work to do, it verifies a fresh MongoDB/media backup before the first batch. Backup failure prevents apply. Cases must be closed for 12 calendar months UTC before sensitive content is redacted. Evidence kept for another Case is rechecked after its last reference disappears; active/recent Cases and Listing/Order references remain protected. Each batch deletes at most 100 files; `eligibleMediaRemaining` and `pendingMediaRemaining` keep the scheduler draining the queue.
-
-API and retention JSONL files are stored in the `rewear-circle-src-technical-logs` volume at `/app/logs`, with owner-only file permissions. They retain the current UTC date and the preceding 29 UTC dates, cleaned on the first log of a new day and by the daily scheduler. Docker diagnostic logs use `json-file`, `max-size=10m`, `max-file=3`; this size cap is separate from the 30-day file-log policy. MongoDB AuditEvent and financial records follow their own business policies.
-
-```sh
-docker compose -f compose.yaml -f compose.operations.yaml exec -T backend ls -l /app/logs
-docker compose -f compose.yaml -f compose.operations.yaml exec -T retention-scheduler printenv RETENTION_MODE
-docker compose -f compose.yaml -f compose.operations.yaml exec -T retention-scheduler cat /app/logs/retention-health.json
+```powershell
+$sellerEmail = Read-Host "Email nguoi ban da xac minh"
+docker compose -f compose.yaml -f compose.operations.yaml run --rm backend node src/scripts/importDemoCatalog.js $sellerEmail
 ```
 
-See the [current backend operations runbook](docs/runbooks/backend-fulfillment-operations.md) for backup and activation, and [isolated backend acceptance](docs/runbooks/backend-acceptance.md) for regression, gateway and restore checks. Week 1 runbooks record historical verification of the base Compose setup. VNPAY, 15-minute reservations and early Case deletion remain deferred; no VNPAY worker or tunnel is part of the runtime.
+### 4. Cập nhật hoặc dừng
 
-See [DISC acceptance report](docs/runbooks/week1-nhung-docker-discovery-check.md) for the API visibility matrix, UI smoke results, and test evidence.
+Khi thay đổi mã, chạy lại lệnh `up --build` ở bước 2, rồi tạo lại gateway để Nginx nhận địa chỉ container mới.
+
+```powershell
+docker compose -f compose.yaml -f compose.operations.yaml up -d --no-deps --force-recreate --wait gateway
+```
+
+Khi cần dừng, dùng `stop` để giữ dữ liệu trong volume:
+
+```powershell
+docker compose -f compose.yaml -f compose.operations.yaml stop
+```
+
+## Kiểm thử và CI
+
+Kiểm thử frontend trực tiếp trên máy cần Node.js 24. Playwright dùng Chromium và API giả lập.
+
+```powershell
+Set-Location frontend
+npm ci
+npm test
+npm run build
+npx playwright install --only-shell chromium
+npm run test:e2e
+```
+
+Để kiểm thử backend, dùng cấu hình Docker cô lập trong [hướng dẫn nghiệm thu backend](docs/runbooks/backend-acceptance.md). Hai workflow [frontend](.github/workflows/frontend.yml) và [backend](.github/workflows/backend.yml) chạy khi có thay đổi liên quan trong push hoặc pull request. Chúng hiện dùng để kiểm tra mã và build.
+
+## Triển khai công khai
+
+Cấu hình Compose trong repo phục vụ demo cục bộ. Để triển khai lên máy chủ có tên miền, dùng cấu hình triển khai riêng và kiểm tra các điểm sau:
+
+1. Đưa frontend và `/api/v1` lên cùng tên miền qua HTTPS. Đặt `APP_ORIGIN` bằng đúng origin công khai và cấu hình proxy để backend nhận đúng giao thức HTTPS và địa chỉ máy khách.
+2. Đặt `NODE_ENV=production` cho API, tạo `SESSION_SECRET` riêng và dùng SMTP thật để gửi mã xác minh. Giữ MongoDB và các cổng nội bộ trong mạng riêng.
+3. Gắn lưu trữ bền vững cho MongoDB và ảnh tải lên, rồi kiểm tra sao lưu và khôi phục. MongoDB cần replica set để thực hiện giao dịch.
+4. Sau khi khởi động, kiểm tra xem danh sách, đăng ký, nhận mã xác minh, đăng nhập, tải ảnh và đặt COD qua tên miền công khai.
+
+## Tài liệu
+
+- [Cấu trúc và các tuyến frontend](frontend/README.md)
+- [Quy ước API và mã lỗi](docs/Architecture%20%26%20Technical%20Design/API%20Contracts%20%26%20Error%20Conventions.md)
+- [Vận hành, backup, khôi phục và chính sách lưu trữ](docs/runbooks/backend-fulfillment-operations.md)
