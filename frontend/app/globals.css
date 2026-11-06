@@ -21,7 +21,7 @@
 @import "../features/listings/CatalogPage.css";
 @import "../features/listings/ListingDetailPage.css";
 @import "../features/listings/ListingCard.css";
-@import "../features/account/AuthPage.css";
+@import "../features/account/auth/AuthLayout.css";
 @import "../features/account/NotificationsPage.css";
 @import "../features/checkout/CartPage.css";
 @import "../features/checkout/CheckoutDetailPage.css";

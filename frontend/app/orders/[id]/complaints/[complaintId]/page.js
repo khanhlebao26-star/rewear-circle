@@ -1,6 +1,6 @@
 import WorkspaceAccess from "@/components/layout/WorkspaceAccess";
 import { readRecordParams } from "@/lib/recordParams";
-import { ComplaintsPage } from "@/features/orders/ComplaintsPage";
+import { ComplaintDetailPage } from "@/features/orders/complaints/ComplaintDetailPage";
 
 export default async function OrdersByIdComplaintsByComplaintIdRoute({
   params,
@@ -8,7 +8,7 @@ export default async function OrdersByIdComplaintsByComplaintIdRoute({
   const { id, complaintId } = await readRecordParams(params);
   return (
     <WorkspaceAccess>
-      <ComplaintsPage id={id} sub={complaintId} />
+      <ComplaintDetailPage id={id} complaintId={complaintId} />
     </WorkspaceAccess>
   );
 }
