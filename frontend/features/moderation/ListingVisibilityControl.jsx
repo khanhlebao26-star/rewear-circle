@@ -6,7 +6,7 @@ import { ErrorState } from "@/components/ui/Feedback";
 import { Field } from "@/components/ui/FormFields";
 import { Modal } from "@/components/ui/Modal";
 
-export function ListingVisibilityControl({ listing, reload }) {
+export function ListingVisibilityControl({ listing, reload, disabled }) {
   const mutation = useMutation();
   const [open, setOpen] = useState(false);
   async function submit(event) {
@@ -30,7 +30,7 @@ export function ListingVisibilityControl({ listing, reload }) {
   }
   return (
     <>
-      <button className="btn secondary sm" onClick={() => setOpen(true)}>
+      <button className="btn secondary sm" onClick={() => setOpen(true)} disabled={disabled}>
         {listing.adminHidden ? "Hiện tin (Admin)" : "Ẩn tin (Admin)"}
       </button>
       {open && (

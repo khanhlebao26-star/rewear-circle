@@ -7,7 +7,7 @@ export async function getPublicListingData(path) {
       signal: AbortSignal.timeout(5000),
     });
     const result = await response.json();
-    if (response.ok) return { data: result.data };
+    if (response.ok) return { data: result.data, meta: result.meta || {} };
     return {
       error: {
         status: response.status,

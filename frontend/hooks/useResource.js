@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api.mjs";
 
-export default function useResource(path) {
+export default function useResource(path, { keepDataOnReload = false } = {}) {
   const [revision, setRevision] = useState(0);
   const [resource, setResource] = useState({
     path: null,
@@ -26,14 +26,14 @@ export default function useResource(path) {
       return;
     }
     const controller = new AbortController();
-    setResource({
+    setResource((previous) => ({
       path,
       revision,
-      data: null,
-      meta: {},
+      data: keepDataOnReload && previous.path === path ? previous.data : null,
+      meta: keepDataOnReload && previous.path === path ? previous.meta : {},
       loading: true,
       error: null,
-    });
+    }));
     api(path, { signal: controller.signal })
       .then((result) => {
         if (!controller.signal.aborted)
@@ -58,11 +58,16 @@ export default function useResource(path) {
           });
       });
     return () => controller.abort();
-  }, [path, revision]);
+  }, [path, revision, keepDataOnReload]);
+  const samePath = resource.path === path;
+  const settled = samePath && resource.revision === revision && !resource.loading;
+  const refreshing = keepDataOnReload && samePath && resource.data != null && !settled;
   return {
-    ...(resource.path === path && resource.revision === revision
-      ? resource
-      : { data: null, meta: {}, loading: Boolean(path), error: null }),
+    data: settled || refreshing ? resource.data : null,
+    meta: settled || refreshing ? resource.meta : {},
+    error: settled ? resource.error : null,
+    loading: Boolean(path) && !settled && !refreshing,
+    refreshing,
     reload: () => setRevision((value) => value + 1),
   };
 }

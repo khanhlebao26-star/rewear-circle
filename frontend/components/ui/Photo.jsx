@@ -3,6 +3,17 @@
 import { useEffect, useState } from "react";
 import { Icon } from "@/components/ui/Icon";
 
+const responsivePhotos = {
+  card: {
+    widths: [320, 640],
+    sizes: "(max-width: 600px) 50vw, (max-width: 850px) 33vw, (max-width: 1280px) 25vw, 300px",
+  },
+  detail: {
+    widths: [640, 1280],
+    sizes: "(max-width: 600px) 92vw, (max-width: 1280px) 48vw, 620px",
+  },
+};
+
 export function Photo({ id, title, className = "product-art", query = "", variant, loading, priority }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [id, query, variant]);
@@ -12,6 +23,8 @@ export function Photo({ id, title, className = "product-art", query = "", varian
     params.set("width", width);
     return `/api/v1/media/${id}?${params}`;
   };
+  const responsive = responsivePhotos[variant];
+  const width = variant === "thumbnail" ? 160 : responsive?.widths[0];
   return !id || failed ? (
     <span
       className={`${className} image-placeholder`}
@@ -24,9 +37,9 @@ export function Photo({ id, title, className = "product-art", query = "", varian
   ) : (
     <img
       className={className}
-      src={variant === "thumbnail" ? withWidth(160) : variant === "card" ? withWidth(320) : original}
-      srcSet={variant === "card" ? `${withWidth(320)} 320w, ${withWidth(640)} 640w` : undefined}
-      sizes={variant === "card" ? "(max-width: 600px) 50vw, (max-width: 850px) 33vw, (max-width: 1280px) 25vw, 300px" : undefined}
+      src={width ? withWidth(width) : original}
+      srcSet={responsive?.widths.map((size) => `${withWidth(size)} ${size}w`).join(", ")}
+      sizes={responsive?.sizes}
       alt={title}
       loading={loading}
       fetchPriority={priority ? "high" : undefined}

@@ -27,7 +27,7 @@ const {
 const { success, failure: fail } = require("../http/responses");
 
 const uploadDir = path.resolve(__dirname, "../../uploads");
-const thumbnailWidths = new Set(["160", "320", "640"]);
+const thumbnailWidths = new Set(["160", "320", "640", "1280"]);
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { files: 5, fileSize: 5 * 1024 * 1024 },
