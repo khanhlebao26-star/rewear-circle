@@ -1,6 +1,6 @@
 # Rewear Circle frontend
 
-Giao diện Next.js triển khai từ prototype trong `../prototype`, kết nối API hiện có qua `/api/v1`. Không dùng bản ghi hoặc tài khoản giả trong giao diện.
+Giao diện Next.js của Rewear Circle kết nối API qua `/api/v1`. Xem [README ở thư mục gốc](../README.md) để khởi động toàn bộ ứng dụng.
 
 ## Cấu trúc thư mục
 
@@ -18,7 +18,7 @@ Giao diện Next.js triển khai từ prototype trong `../prototype`, kết nố
 - `/cart`, `/checkout`, `/me/checkouts`, `/checkouts/:id`: giỏ, đặt hàng, lịch sử, chi tiết và thu COD.
 - `/me/orders`, `/orders/:id`, `/orders/:id/complaints`: đơn mua, giao nhận và khiếu nại.
 - `/sell`, `/me/listings`, `/me/listings/:id`, `/seller/orders`: đăng bán, sửa/ẩn tin, lịch sử phiên bản và đơn bán. Bộ lọc tủ đồ áp dụng trong trang kết quả hiện tại do API tủ đồ chỉ cung cấp phân trang.
-- `/admin/listings`, `/admin/cases`, `/admin/cod-collections`, `/admin/cod-returns`: kiểm duyệt, vụ việc và vận hành COD.
+- `/admin/listings`, `/admin/listing-management`, `/admin/cases`, `/admin/cod-collections`, `/admin/cod-returns`: duyệt tin, quản lý tin, vụ việc và vận hành COD.
 - `/support/cases`: chỉ đọc vụ đang mở được giao. Liên hệ người nhận chỉ tồn tại trong hộp thoại của từng lượt đọc.
 
 Màn hình và thao tác tuân theo vai trò, xác minh email và điều kiện từ API. Thông tin món trong đơn dùng bản lưu lúc đặt. Xác nhận nhận hàng và ghi nhận thu COD là hai thao tác riêng.
