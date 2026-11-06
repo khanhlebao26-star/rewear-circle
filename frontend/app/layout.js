@@ -5,6 +5,9 @@ export const metadata = {
   title: "Rewear Circle — Mặc lại điều bạn yêu",
   description:
     "Khám phá thời trang đã qua sử dụng, được tuyển chọn để tìm thấy người mặc tiếp theo.",
+  icons: {
+    icon: { url: "/rewear-circle-mark.png", type: "image/png", sizes: "640x640" },
+  },
 };
 
 export default function RootLayout({ children }) {

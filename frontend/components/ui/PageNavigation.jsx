@@ -18,12 +18,18 @@ export function Heading({ eyebrow, title, description, action }) {
   );
 }
 
-export function Breadcrumb({ children, href = "/", back = "Trang chủ" }) {
+export function Breadcrumb({ children, href = "/", back = "Trang chủ", parent }) {
   return (
     <div className="breadcrumb">
       <Link href={href}>{back}</Link>
-      <span>/</span>
-      <span>{children}</span>
+      {parent && (
+        <>
+          <span aria-hidden="true">/</span>
+          <Link href={parent.href}>{parent.label}</Link>
+        </>
+      )}
+      <span aria-hidden="true">/</span>
+      <span aria-current="page">{children}</span>
     </div>
   );
 }

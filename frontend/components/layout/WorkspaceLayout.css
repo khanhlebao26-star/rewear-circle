@@ -79,10 +79,9 @@
   font-size: 20px;
   padding: 0 8px 21px;
 }
-.staff-side .brand i {
+.staff-side .brand-mark {
   width: 30px;
   height: 30px;
-  font-size: 24px;
 }
 .staff-side .side-bottom {
   margin-top: auto;
@@ -169,7 +168,7 @@
     font-size: 16px;
     padding: 0 20px 0 0;
   }
-  .staff-side .brand i {
+  .staff-side .brand-mark {
     width: 27px;
     height: 27px;
   }

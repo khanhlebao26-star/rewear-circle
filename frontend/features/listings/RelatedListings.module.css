@@ -1,0 +1,16 @@
+.section {
+  border-top: 1px solid var(--line);
+  padding-top: 28px;
+}
+
+.heading {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.cards > :global(.card) {
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+}

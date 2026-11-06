@@ -1,4 +1,6 @@
+import { Suspense } from "react";
 import ListingDetailPage from "@/features/listings/ListingDetailPage";
+import { RelatedListings } from "@/features/listings/RelatedListings";
 import { getPublicListingData } from "@/lib/publicListingData";
 
 export const dynamic = "force-dynamic";
@@ -6,5 +8,13 @@ export const dynamic = "force-dynamic";
 export default async function ListingDetailRoute({ params }) {
   const { id } = await params;
   const { data, error } = await getPublicListingData(`/listings/${encodeURIComponent(id)}`);
-  return <ListingDetailPage key={id} id={id} listing={data} error={error} />;
+  return (
+    <ListingDetailPage key={id} id={id} listing={data} error={error}>
+      {data && (
+        <Suspense fallback={null}>
+          <RelatedListings category={data.category} listingId={data.listingId} />
+        </Suspense>
+      )}
+    </ListingDetailPage>
+  );
 }

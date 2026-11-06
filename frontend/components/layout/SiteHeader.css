@@ -42,6 +42,16 @@
 .navlinks a.active {
   border-bottom: 1px solid var(--green);
 }
+.nav .impact-nav {
+  color: var(--green);
+  font-weight: 600;
+}
+.navlinks .impact-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
 .nav-actions {
   display: flex;
   gap: 17px;

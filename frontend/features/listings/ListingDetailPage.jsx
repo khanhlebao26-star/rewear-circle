@@ -11,7 +11,7 @@ import { Gallery } from "@/components/ui/Gallery";
 import { Icon } from "@/components/ui/Icon";
 import { money } from "@/lib/api.mjs";
 
-export default function ListingDetailPage({ id, listing, error }) {
+export default function ListingDetailPage({ id, listing, error, children }) {
   const router = useRouter();
   const session = useSession();
   const mutation = useMutation();
@@ -28,7 +28,14 @@ export default function ListingDetailPage({ id, listing, error }) {
   }
   return (
     <main id="main-content" className="shell page" tabIndex={-1}>
-      <Breadcrumb href="/listings" back="Danh sách sản phẩm">
+      <Breadcrumb
+        href="/listings"
+        back="Danh sách sản phẩm"
+        parent={listing?.category ? {
+          href: `/listings?category=${encodeURIComponent(listing.category)}`,
+          label: listing.category,
+        } : undefined}
+      >
         {listing?.title || "Chi tiết món đồ"}
       </Breadcrumb>
       {error ? (
@@ -128,6 +135,7 @@ export default function ListingDetailPage({ id, listing, error }) {
           </article>
         )
       )}
+      {children}
     </main>
   );
 }
