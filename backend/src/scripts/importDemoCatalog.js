@@ -18,50 +18,62 @@ async function buildListings(ownerId) {
   // Validate product details before downloading and linking the real image.
   const validationImageId = new mongoose.Types.ObjectId().toHexString();
 
-  return Promise.all(catalog.map(async (item, index) => {
-    const { code } = item;
-    if (!/^RC\d{2,}$/.test(code) || codes.has(code)) {
-      throw new Error(`Mã sản phẩm không hợp lệ hoặc bị trùng ở mục ${index + 1}.`);
-    }
-    codes.add(code);
+  return Promise.all(
+    catalog.map(async (item, index) => {
+      const { code } = item;
+      if (!/^RC\d{2,}$/.test(code) || codes.has(code)) {
+        throw new Error(
+          `Mã sản phẩm không hợp lệ hoặc bị trùng ở mục ${index + 1}.`,
+        );
+      }
+      codes.add(code);
 
-    const imageUrl = item.image ?? "";
-    const image = typeof imageUrl === "string" ? URL.parse(imageUrl) : null;
-    if (imageUrl !== "" && (!image || image.protocol !== "https:" || image.username || image.password)) {
-      throw new Error(`Mục ${code} cần link ảnh HTTPS trực tiếp.`);
-    }
-    const form = readForm({ ...item, imageIds: [validationImageId] });
-    if (!form) throw new Error(`Dữ liệu sản phẩm ${code} không hợp lệ.`);
+      const imageUrl = item.image ?? "";
+      const image = typeof imageUrl === "string" ? URL.parse(imageUrl) : null;
+      if (
+        imageUrl !== "" &&
+        (!image ||
+          image.protocol !== "https:" ||
+          image.username ||
+          image.password)
+      ) {
+        throw new Error(`Mục ${code} cần link ảnh HTTPS trực tiếp.`);
+      }
+      const form = readForm({ ...item, imageIds: [validationImageId] });
+      if (!form) throw new Error(`Dữ liệu sản phẩm ${code} không hợp lệ.`);
 
-    const listingId = createHash("sha256")
-      .update(`rewear-demo-catalog:${ownerId}:${code}`)
-      .digest("hex")
-      .slice(0, 24);
-    const versionId = new mongoose.Types.ObjectId();
-    const createdAt = new Date(now - index * 1000);
-    const listing = new Listing({
-      _id: listingId,
-      ownerId,
-      approvedVersionId: versionId,
-      reviewHold: false,
-      saleStatus: "AVAILABLE",
-      versions: [{
-        ...form,
-        _id: versionId,
-        imageIds: [],
-        status: "APPROVED",
-        submittedAt: createdAt,
-        reviewedAt: createdAt,
-      }],
-      createdAt,
-      updatedAt: createdAt,
-    });
-    await listing.validate();
-    return { code, image, listing };
-  }));
+      const listingId = createHash("sha256")
+        .update(`rewear-demo-catalog:${ownerId}:${code}`)
+        .digest("hex")
+        .slice(0, 24);
+      const versionId = new mongoose.Types.ObjectId();
+      const createdAt = new Date(now - index * 1000);
+      const listing = new Listing({
+        _id: listingId,
+        ownerId,
+        approvedVersionId: versionId,
+        reviewHold: false,
+        saleStatus: "AVAILABLE",
+        versions: [
+          {
+            ...form,
+            _id: versionId,
+            imageIds: [],
+            status: "APPROVED",
+            submittedAt: createdAt,
+            reviewedAt: createdAt,
+          },
+        ],
+        createdAt,
+        updatedAt: createdAt,
+      });
+      await listing.validate();
+      return { code, image, listing };
+    }),
+  );
 }
 
-async function saveImage(image, ownerId) {
+async function saveImage(image, ownerId, storeImagesInMongo) {
   const response = await fetch(image, {
     redirect: "error",
     signal: AbortSignal.timeout(10000),
@@ -88,24 +100,31 @@ async function saveImage(image, ownerId) {
     .digest("hex")
     .slice(0, 24);
   const filename = `demo-catalog-${mediaId}${detected.extension}`;
-  await fs.mkdir(uploadDir, { recursive: true });
-  const temporaryPath = path.join(uploadDir, `${randomUUID()}.tmp`);
-  try {
-    await fs.writeFile(temporaryPath, buffer);
-    await fs.rename(temporaryPath, path.join(uploadDir, filename));
-  } finally {
-    await fs.rm(temporaryPath, { force: true });
+  if (!storeImagesInMongo) {
+    await fs.mkdir(uploadDir, { recursive: true });
+    const temporaryPath = path.join(uploadDir, `${randomUUID()}.tmp`);
+    try {
+      await fs.writeFile(temporaryPath, buffer);
+      await fs.rename(temporaryPath, path.join(uploadDir, filename));
+    } finally {
+      await fs.rm(temporaryPath, { force: true });
+    }
   }
 
-  await Media.updateOne(
-    { _id: mediaId },
-    { $setOnInsert: { ownerId, filename, mimeType: detected.mimeType, size } },
-    { upsert: true },
-  );
+  const update = {
+    $setOnInsert: { ownerId, filename, mimeType: detected.mimeType, size },
+  };
+  if (storeImagesInMongo) update.$set = { demoImageData: buffer };
+
+  await Media.updateOne({ _id: mediaId }, update, { upsert: true });
   return mediaId;
 }
 
-async function updateCatalogImages(products, ownerId, refreshImages) {
+async function updateCatalogImages(
+  products,
+  ownerId,
+  { refreshImages, storeImagesInMongo },
+) {
   const savedImages = new Map();
   let added = 0;
   let failed = 0;
@@ -117,22 +136,34 @@ async function updateCatalogImages(products, ownerId, refreshImages) {
       saleStatus: "AVAILABLE",
       "versions.0.status": "APPROVED",
       "versions.1": { $exists: false },
-      $expr: { $eq: ["$approvedVersionId", { $arrayElemAt: ["$versions._id", 0] }] },
+      $expr: {
+        $eq: ["$approvedVersionId", { $arrayElemAt: ["$versions._id", 0] }],
+      },
     };
-    const current = await Listing.findOne(filter).select("versions.imageIds").lean();
+    const current = await Listing.findOne(filter)
+      .select("versions.imageIds")
+      .lean();
     if (!current) continue;
     const imageIds = current.versions[0].imageIds ?? [];
     const [oldImageId] = imageIds;
-    if (oldImageId && (!refreshImages || imageIds.length !== 1 || !await Media.exists({
-      _id: oldImageId,
-      ownerId,
-      purpose: "LISTING",
-      filename: /^demo-catalog-/,
-    }))) continue;
+    if (
+      oldImageId &&
+      (!refreshImages ||
+        imageIds.length !== 1 ||
+        !(await Media.exists({
+          _id: oldImageId,
+          ownerId,
+          purpose: "LISTING",
+          filename: /^demo-catalog-/,
+        })))
+    )
+      continue;
 
     try {
       const url = image.href;
-      if (!savedImages.has(url)) savedImages.set(url, saveImage(image, ownerId));
+      if (!savedImages.has(url)) {
+        savedImages.set(url, saveImage(image, ownerId, storeImagesInMongo));
+      }
       const mediaId = await savedImages.get(url);
       if (String(oldImageId) === mediaId) continue;
       const result = await Listing.updateOne(
@@ -159,29 +190,44 @@ async function main() {
 
   if (!argument) throw new Error("Hãy truyền email của tài khoản người bán.");
   if (process.env.NODE_ENV === "production") {
-    throw new Error("Chỉ nhập bộ sản phẩm mẫu trong môi trường phát triển hoặc demo.");
+    throw new Error(
+      "Chỉ nhập bộ sản phẩm mẫu trong môi trường phát triển hoặc demo.",
+    );
   }
   if (!process.env.MONGODB_URI) throw new Error("Thiếu cấu hình MONGODB_URI.");
 
-  await mongoose.connect(process.env.MONGODB_URI, { serverSelectionTimeoutMS: 5000 });
+  await mongoose.connect(process.env.MONGODB_URI, {
+    serverSelectionTimeoutMS: 5000,
+  });
   const seller = await User.findOne({ email: argument, role: "USER" })
     .select("_id emailVerifiedAt")
     .lean();
   if (!seller?.emailVerifiedAt) {
-    throw new Error("Cần một tài khoản người dùng đã xác minh email trong database này.");
+    throw new Error(
+      "Cần một tài khoản người dùng đã xác minh email trong database này.",
+    );
   }
 
   const products = await buildListings(seller._id);
-  const result = await Listing.bulkWrite(products.map(({ listing }) => ({
-    updateOne: {
-      filter: { _id: listing._id },
-      update: { $setOnInsert: listing.toObject() },
-      upsert: true,
-      timestamps: false,
-    },
-  })));
-  console.log(`MongoDB ${mongoose.connection.name} | Thêm ${result.upsertedCount} món, bỏ qua ${result.matchedCount} món đã có.`);
-  await updateCatalogImages(products, seller._id, process.argv.includes("--refresh-images", 3));
+  const result = await Listing.bulkWrite(
+    products.map(({ listing }) => ({
+      updateOne: {
+        filter: { _id: listing._id },
+        update: { $setOnInsert: listing.toObject() },
+        upsert: true,
+        timestamps: false,
+      },
+    })),
+  );
+  console.log(
+    `MongoDB ${mongoose.connection.name} | Thêm ${result.upsertedCount} món, bỏ qua ${result.matchedCount} món đã có.`,
+  );
+  if (!process.argv.includes("--without-images")) {
+    await updateCatalogImages(products, seller._id, {
+      refreshImages: process.argv.includes("--refresh-images", 3),
+      storeImagesInMongo: process.argv.includes("--store-images-in-mongodb", 3),
+    });
+  }
 }
 
 main()
