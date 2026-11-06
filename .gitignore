@@ -7,3 +7,4 @@ plan
 frontend/.next/
 frontend/node_modules
 /backups/
+/prototype/*.log

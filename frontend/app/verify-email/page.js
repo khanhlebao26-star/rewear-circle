@@ -1,5 +1,5 @@
-import { AuthPage } from "@/features/account/AuthPage";
+import { VerifyEmailPage } from "@/features/account/auth/VerifyEmailPage";
 
 export default async function VerifyEmailRoute({ searchParams }) {
-  return <AuthPage type="verify-email" query={await searchParams} />;
+  return <VerifyEmailPage query={await searchParams} />;
 }
