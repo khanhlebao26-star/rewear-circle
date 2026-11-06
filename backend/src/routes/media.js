@@ -360,6 +360,11 @@ router.get("/media/:id", async (req, res) => {
   if (audit) res.set("Cache-Control", "private, no-store");
   res.set("X-Content-Type-Options", "nosniff");
   const filename = path.join(uploadDir, media.filename);
+  // Demo imports can store the image in MongoDB instead of the local upload directory.
+  const demoImage = media.filename.startsWith("demo-catalog-")
+    ? await Media.findById(media._id).select("demoImageData")
+    : null;
+  const imageData = demoImage?.demoImageData;
   const { width } = req.query;
   if (media.purpose === "LISTING" && thumbnailWidths.has(width)) {
     if (!audit) {
@@ -368,7 +373,7 @@ router.get("/media/:id", async (req, res) => {
       if (req.fresh) return res.status(304).end();
     }
 
-    const thumbnail = await sharp(filename, {
+    const thumbnail = await sharp(imageData ?? filename, {
       autoOrient: true,
       limitInputPixels: 24_000_000,
     })
@@ -383,6 +388,7 @@ router.get("/media/:id", async (req, res) => {
     res.removeHeader("ETag");
   }
   res.type(media.mimeType);
+  if (imageData) return res.send(imageData);
   return res.sendFile(filename);
 });
 

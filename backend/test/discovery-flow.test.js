@@ -332,6 +332,17 @@ test("DISC feed, filters, visibility, detail DTO, and public media access", {
     assert.ok(etag);
     assert.equal((await request(thumbnailPath, undefined, conditional)).response.status, 304);
     assert.deepEqual((await request(`${mediaPath}?width=123`)).data, imageBytes);
+
+    const publicImageId = listings[0].versions[1].imageIds[0];
+    await Media.updateOne({ _id: publicImageId }, {
+      $set: { filename: `demo-catalog-${publicImageId}.png`, demoImageData: imageBytes },
+    });
+    assert.deepEqual((await request(mediaPath)).data, imageBytes);
+    const demoThumbnail = await request(thumbnailPath);
+    assert.equal(demoThumbnail.response.status, 200);
+    assert.equal(demoThumbnail.response.headers.get("content-type"), "image/webp");
+    assert.equal((await sharp(demoThumbnail.data).metadata()).width, 320);
+
     const hiddenImageId = notPublic[0].versions[0].imageIds[0];
     const hiddenImage = await request(`/media/${hiddenImageId}`);
     assert.equal(hiddenImage.response.status, 404);
