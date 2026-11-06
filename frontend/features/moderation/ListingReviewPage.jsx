@@ -18,10 +18,12 @@ import { ListingVersionContent } from "@/features/listings/ListingVersionContent
 import { AuditTrail } from "@/features/moderation/AuditTrail";
 import { ListingVisibilityControl } from "@/features/moderation/ListingVisibilityControl";
 
-export function ListingReviewPage({ id, management = false }) {
+export function ListingReviewPage({ id, managementBackHref }) {
+  const management = Boolean(managementBackHref);
   const [page, setPage] = useState(1);
   const resource = useResource(
     `/admin/listing-versions${id ? `/${id}` : `?page=${page}&limit=20`}`,
+    { keepDataOnReload: Boolean(id) },
   );
   const mutation = useMutation();
   const [decision, setDecision] = useState("APPROVE");
@@ -50,7 +52,7 @@ export function ListingReviewPage({ id, management = false }) {
         {id && value ? (
           <>
             <Breadcrumb
-              href={management ? "/admin/listing-management" : "/admin/listings"}
+              href={managementBackHref || "/admin/listings"}
               back={management ? "Quản lý tin đăng" : "Hàng chờ duyệt"}
             >
               Phiên bản <RecordId value={id} />
@@ -94,7 +96,7 @@ export function ListingReviewPage({ id, management = false }) {
                   <section className="panel">
                     <h2>Hiển thị tin đăng</h2>
                     {value.adminHiddenReason && <p className="description">{value.adminHiddenReason}</p>}
-                    <ListingVisibilityControl listing={value} reload={resource.reload} />
+                    <ListingVisibilityControl listing={value} reload={resource.reload} disabled={resource.refreshing} />
                     {value.version.status === "PENDING" && (
                       <p className="caption"><Link className="link" href={`/admin/listings/${id}`}>Mở trang duyệt phiên bản →</Link></p>
                     )}
@@ -134,7 +136,7 @@ export function ListingReviewPage({ id, management = false }) {
                               maxLength={1000}
                             />
                           </Field>
-                          <button className="btn full" disabled={mutation.pending}>
+                          <button className="btn full" disabled={mutation.pending || resource.refreshing}>
                             Lưu quyết định
                           </button>
                         </>
@@ -148,6 +150,9 @@ export function ListingReviewPage({ id, management = false }) {
                     </Notice>
                   </>
                 )}
+                <span className="caption" role="status">
+                  {resource.refreshing && "Đang cập nhật…"}
+                </span>
               </aside>
             </div>
           </>

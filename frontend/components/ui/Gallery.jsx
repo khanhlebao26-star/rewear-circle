@@ -14,7 +14,7 @@ export function Gallery({ ids = [], title, query = "", listingPhotos = false, pr
         onClick={() => setLarge(true)}
         aria-label={`Phóng to ảnh ${title}`}
       >
-        <Photo id={ids[selected]} title={title} query={query} priority={priority && selected === 0} />
+        <Photo id={ids[selected]} title={title} query={query} variant={listingPhotos ? "detail" : undefined} priority={priority && selected === 0} />
       </button>
       {ids.length > 1 && (
         <div className="thumbs">

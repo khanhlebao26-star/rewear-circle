@@ -34,7 +34,7 @@ export function Breadcrumb({ children, href = "/", back = "Trang chủ", parent 
   );
 }
 
-export function Pager({ meta, page, onPage, count = 0 }) {
+export function Pager({ meta, page, onPage, count = 0, disabled = false }) {
   const pages =
     meta.total != null
       ? Math.max(1, Math.ceil(meta.total / (meta.limit || 20)))
@@ -45,7 +45,7 @@ export function Pager({ meta, page, onPage, count = 0 }) {
         <button
           className="btn secondary sm"
           onClick={() => onPage(page - 1)}
-          disabled={page <= 1}
+          disabled={disabled || page <= 1}
         >
           Trước
         </button>
@@ -56,7 +56,7 @@ export function Pager({ meta, page, onPage, count = 0 }) {
         <button
           className="btn secondary sm"
           onClick={() => onPage(page + 1)}
-          disabled={pages ? page >= pages : count < 20}
+          disabled={disabled || (pages ? page >= pages : count < 20)}
         >
           Tiếp
         </button>

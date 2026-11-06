@@ -323,6 +323,10 @@ test("DISC feed, filters, visibility, detail DTO, and public media access", {
     assert.equal(thumbnail.response.headers.get("content-type"), "image/webp");
     assert.equal((await sharp(thumbnail.data).metadata()).width, 320);
     assert.ok(thumbnail.data.length < imageBytes.length);
+    const detailImage = await request(`${mediaPath}?width=1280`);
+    assert.equal(detailImage.response.status, 200);
+    assert.equal(detailImage.response.headers.get("content-type"), "image/webp");
+    assert.equal((await sharp(detailImage.data).metadata()).width, 960);
     const etag = thumbnail.response.headers.get("etag");
     const conditional = { headers: { "if-none-match": etag, "cache-control": "max-age=0" } };
     assert.ok(etag);
